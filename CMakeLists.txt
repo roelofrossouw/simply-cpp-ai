@@ -21,10 +21,53 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 # Dependencies #
 ################
+
+#models
+if (APPLE)
+    execute_process(COMMAND brew --prefix simply-cpp-models OUTPUT_VARIABLE BREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if (BREW_PREFIX)
+        message(STATUS "Found Homebrew package: ${BREW_PREFIX}")
+    endif ()
+    set(SIMPLY_CPP_MODEL_DIR "${BREW_PREFIX}/share/simply-cpp-models")
+else ()
+    set(SIMPLY_CPP_MODEL_DIR "/opt/simply-cpp/models")
+endif ()
+
+find_file(SIMPLY_CPP_MODEL NAMES yolo26n.onnx PATHS ${SIMPLY_CPP_MODEL_DIR})
+if (NOT SIMPLY_CPP_MODEL)
+    if (APPLE)
+        # Add tap with brew tap roelofrossouw/sc; brew trust roelofrossouw/sc
+        execute_process(COMMAND brew -y install simply-cpp-models)
+    else ()
+        # Add repo with sudo curl -fsSL https://apt.1web.co.za/setup.sh | bash
+        execute_process(COMMAND apt -y install simply-cpp-ai-models)
+    endif ()
+    find_file(SIMPLY_CPP_MODEL NAMES yolo26n.onnx PATHS ${SIMPLY_CPP_MODEL_DIR})
+    if (NOT SIMPLY_CPP_MODEL)
+        message(FATAL_ERROR "Could not find onnx models in ${SIMPLY_CPP_MODEL_DIR}.")
+    endif ()
+endif ()
+configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
+
 find_or_fetch_package(sc-core GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp.git)
 find_or_fetch_package(sc-image GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp-image.git)
+find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 ## ONNXRuntime ##
-find_or_install_package(onnxruntime onnxruntime onnxruntime)
+if (APPLE)
+    find_or_install_package(onnxruntime onnxruntime onnxruntime)
+else ()
+    # Deploy onnxruntime to unix with:
+    find_package(onnxruntime QUIET)
+    if (NOT onnxruntime_FOUND)
+        execute_process(COMMAND wget -c https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-linux-x64-gpu_cuda13-1.29.0.tgz WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        execute_process(COMMAND tar fxz onnxruntime-linux-x64-gpu_cuda13-1.29.0.tgz WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/include/ /usr/local/include/onnxruntime/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/lib/ /usr/local/lib/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/lib/ /usr/local/lib64/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        execute_process(COMMAND ldconfig WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+        find_package(onnxruntime CONFIG REQUIRED)
+    endif ()
+endif ()
 
 ###########
 # Objects #
@@ -33,8 +76,14 @@ set(SOURCE_OBJECTS)
 set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
-add_sc_object(onnx LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime)
-add_sc_object(yolo)
+add_sc_object(onnx
+        LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS}
+        PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS})
+target_include_directories(sc-obj-onnx PRIVATE ${CMAKE_BINARY_DIR}/generated)
+
+add_sc_object(yolo
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
 ######################
 # Exported Libraries #
@@ -53,3 +102,16 @@ if (SC_AI_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests sc-ai-test)
 endif ()
+
+############
+# Binaries #
+############
+
+add_executable(sc-ai-demo apps/sc-ai-demo.cpp)
+target_link_libraries(sc-ai-demo PRIVATE sc::sc-ai-shared)
+install(TARGETS sc-ai-demo RUNTIME DESTINATION bin COMPONENT runtime)
+
+#############
+# Packaging #
+#############
+package_sc_module()

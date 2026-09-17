@@ -12,8 +12,10 @@ user="${2:-root}"
 scriptfile=$(realpath "$0")
 scriptpath="${scriptfile%/*}"
 dirpath=$(realpath "$scriptpath"/..)
-echo "Syncing $dirpath to $server:$module"
 pushd "$dirpath" || exit
-rsync -av ./ "$user@$server:$module/" --exclude=".git" --exclude=".idea" --exclude="cmake-*" --delete || exit
-ssh "$user@$server" "./$module/scripts/run.sh"
+echo "Running cmake to make sure scripted files are up to date."
+cmake -DCMAKE_BUILD_TYPE=Release -B cmake-build-local -S . || exit
+echo "Syncing $dirpath to $server:$module"
+rsync -av ./ "$user@$server:/var/www/build/$module/" --exclude=".git" --exclude=".idea" --exclude="cmake-*" --delete || exit
+ssh "$user@$server" "/var/www/build/$module/scripts/run.sh"
 popd || exit
