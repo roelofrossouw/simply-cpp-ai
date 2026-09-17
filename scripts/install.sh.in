@@ -15,6 +15,7 @@ pushd "$dirpath" || exit
 cmake -DCMAKE_BUILD_TYPE=Release -B cmake-build-local -S . || exit
 cmake --build cmake-build-local -j 12 || exit
 ctest --test-dir cmake-build-local --output-on-failure || exit
+cpack --config cmake-build-local/CPackConfig.cmake -G DEB
 sudo cmake --install cmake-build-local
 
 popd || exit

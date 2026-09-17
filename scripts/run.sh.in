@@ -7,13 +7,48 @@
 # Runs on the server, in the directory deploy.sh synced to.
 
 module="sc-@SC_DEPLOY_NAME@"
-
+version="@SC_VERSION@"
+ubuntu_codename=$(lsb_release -sc)
+build_directory="cmake-build-$ubuntu_codename"
 apt -y install cmake clang-tidy ccache g++
 
-pushd ~/"$module" || exit
-cmake -DCMAKE_BUILD_TYPE=Release -B cmake-build-release -S . || exit
-cmake --build cmake-build-release -j 12 || exit
-ctest --test-dir cmake-build-release --output-on-failure || exit
-cmake --install cmake-build-release
+pushd "/var/www/build/$module" || exit
+
+if [ -f scripts/pre-build.sh ]; then
+    echo "Running pre-build"
+    ./scripts/pre-build.sh
+else
+    echo "No pre-build required"
+fi
+
+cmake -DCMAKE_BUILD_TYPE=Release -B $build_directory -S . || exit
+cmake --build $build_directory -j 12 || exit
+ctest --test-dir $build_directory --output-on-failure || exit
+cmake --install $build_directory
+
+pushd $build_directory || exit
+rm -rf *.deb
+cpack --config CPackConfig.cmake -G DEB
+rm -rf *unknown*.deb
+rsync -av *.deb /var/www/build/debs/
+rm -rf /var/www/build/debs/*unknown*
+popd || exit
+
+debfile="${module/sc-/simply-cpp-}"
+debfile="${debfile/-cpp-core/-cpp}"
+echo "Updating repository $debfile $version"
+pushd /var/www/build/repo || exit
+export GNUPGHOME=/var/www/build/signing
+reprepro remove $ubuntu_codename $debfile
+reprepro remove $ubuntu_codename $debfile-dev
+reprepro list $ubuntu_codename
+for deb in ../debs/*.deb; do
+    [ -f "$deb" ] || continue
+    echo "Loading $deb"
+    reprepro includedeb $ubuntu_codename "$deb"
+    mv "$deb" ../debs/processed/
+done
+reprepro list $ubuntu_codename
+popd || exit
 
 popd || exit

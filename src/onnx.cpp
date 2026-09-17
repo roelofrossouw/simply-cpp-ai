@@ -1,33 +1,74 @@
 #include "onnx.h"
 #include "image.h"
+#include <algorithm>
 #include <iostream>
 #include <onnxruntime_cxx_api.h>
 #include <sc.h>
-
 #ifdef __APPLE__
 #include <coreml_provider_factory.h>
+#else
+#include <dlfcn.h>
 #endif
+#include "config.h"
+const std::filesystem::path default_model_dir = SIMPLY_CPP_MODEL_DIR;
 
 using val = Ort::Value;
+namespace fs = std::filesystem;
 
 namespace sc {
     namespace impl {
+#ifndef __APPLE__
+        bool cuda_runtime_available() {
+            constexpr const char *libraries[] = {
+                "libcublasLt.so.13",
+                "libcublasLt.so"
+            };
+            for (const auto *library: libraries) {
+                void *handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
+                if (handle) {
+                    dlclose(handle);
+                    return true;
+                }
+            }
+            return false;
+        }
+#endif
+
         class onnx_impl {
         public:
             Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-            onnx_impl(const std::string &Model) {
+            onnx_impl(const std::string &Model) : model_filename(Model) {
+                if (!fs::exists(model_filename)) {
+                    if (fs::exists(default_model_dir / model_filename))
+                        model_filename = default_model_dir / model_filename;
+                    else
+                        throw std::runtime_error("Model file not found. " + model_filename.string());
+                }
+
 #ifdef __APPLE__
                 // Add CoreML provider
                 Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
 #else
-                OrtCUDAProviderOptions cuda_options{};
-                options.AppendExecutionProvider_CUDA(cuda_options);
+                const auto providers = Ort::GetAvailableProviders();
+                const auto cuda = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider");
+                if (cuda != providers.end() && cuda_runtime_available()) {
+                    try {
+                        OrtCUDAProviderOptions cuda_options{};
+                        options.AppendExecutionProvider_CUDA(cuda_options);
+                    } catch (const Ort::Exception &error) {
+                        std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
+                    }
+                } else if (cuda != providers.end()) {
+                    std::cerr << "CUDA execution provider found, but libcublasLt is unavailable; "
+                            "using the default provider\n";
+                }
                 options.SetIntraOpNumThreads(4);
                 options.SetInterOpNumThreads(1);
 #endif
                 options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
-                session = new Ort::Session(env, Model.c_str(), options);
+
+                session = new Ort::Session(env, model_filename.string().c_str(), options);
                 for (const auto &val: session->GetInputs())
                     inputs.emplace_back(val.GetName().c_str(), val.TypeInfo().GetTensorTypeAndShapeInfo().GetShape());
                 for (const auto &val: session->GetOutputs())
@@ -105,6 +146,7 @@ namespace sc {
             std::vector<std::pair<std::string, std::vector<int64_t> > > outputs;
             std::vector<const char *> input_names;
             std::vector<const char *> output_names;
+            fs::path model_filename;
         };
     }
 

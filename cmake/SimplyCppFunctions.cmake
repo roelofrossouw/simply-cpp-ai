@@ -7,7 +7,7 @@ include(CMakeParseArguments)
 # sc_bootstrap.cmake compares it against a module's own copy so an older installed
 # sc-core cannot quietly replace a newer one: a module built against helpers missing
 # what its CMakeLists.txt calls fails in ways that look nothing like the cause.
-set(SC_HELPERS_VERSION 5)
+set(SC_HELPERS_VERSION 8)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -308,6 +308,9 @@ function(add_sc_libraries)
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
         target_link_libraries(${target} PUBLIC ${dependencies})
         list(APPEND SOURCE_LIBRARIES ${target})
+        if (${kind} STREQUAL SHARED)
+            install(TARGETS ${target} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT runtime NAMELINK_COMPONENT development)
+        endif ()
     endforeach ()
 
     set(SOURCE_LIBRARIES "${SOURCE_LIBRARIES}" PARENT_SCOPE)
@@ -340,11 +343,10 @@ function(install_sc_module)
 
     set(package_destination "${CMAKE_INSTALL_LIBDIR}/cmake/${name}")
 
-    install(TARGETS ${SOURCE_LIBRARIES} EXPORT ${name}Targets)
+    install(TARGETS ${SOURCE_LIBRARIES} EXPORT ${name}Targets COMPONENT development)
     # Finder litters include/ and install(DIRECTORY) copies whatever it finds.
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-            PATTERN ".DS_Store" EXCLUDE)
-    install(EXPORT ${name}Targets FILE ${name}Targets.cmake NAMESPACE sc:: DESTINATION ${package_destination})
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ COMPONENT development DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN ".DS_Store" EXCLUDE)
+    install(EXPORT ${name}Targets FILE ${name}Targets.cmake NAMESPACE sc:: DESTINATION ${package_destination} COMPONENT development)
 
     configure_package_config_file(${ARG_CONFIG_TEMPLATE} ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             INSTALL_DESTINATION ${package_destination}
@@ -355,7 +357,45 @@ function(install_sc_module)
     # the two have to agree on a distribution that uses lib64.
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
-            DESTINATION ${package_destination})
+            DESTINATION ${package_destination} COMPONENT development)
+endfunction()
+
+function(package_sc_module)
+    if (APPLE)
+        set(CODENAME apple)
+        set(CPACK_GENERATOR "TGZ")
+    elseif (UNIX)
+        execute_process(
+                COMMAND lsb_release -sc
+                OUTPUT_VARIABLE CODENAME
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        set(CPACK_GENERATOR "DEB")
+    endif ()
+    if (${SC_MODULE} STREQUAL "core")
+        set(SC_PACKAGE_NAME simply-cpp)
+    else ()
+        set(SC_PACKAGE_NAME simply-cpp-${SC_MODULE})
+    endif ()
+    set(CPACK_COMPONENTS_ALL runtime development)
+    set(CPACK_DEB_COMPONENT_INSTALL ON)
+    set(CPACK_PACKAGE_NAME "${SC_PACKAGE_NAME}")
+    set(CPACK_PACKAGE_VERSION "${SC_VERSION}~${CODENAME}")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Simply C++ ${SC_MODULE} module")
+    set(CPACK_PACKAGE_CONTACT "Roelof Rossouw")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "${SC_PACKAGE_NAME}")
+    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_NAME "${SC_PACKAGE_NAME}-dev")
+    # set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}-unknown-${CPACK_PACKAGE_VERSION}-${CODENAME}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+    set(CPACK_DEBIAN_RUNTIME_FILE_NAME "${SC_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+    set(CPACK_DEBIAN_DEVELOPMENT_FILE_NAME "${SC_PACKAGE_NAME}-dev-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_PROCESSOR}.deb")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Roelof Rossouw <roelof@roelof.co.za>")
+    set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Simply C++ ${SC_MODULE} module for Ubuntu ${CODENAME}")
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_SECTION "utils")
+    set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_SECTION "devel")
+    set(CPACK_DEBIAN_LIBRARY_PACKAGE_SECTION "libs")
+    include(CPack)
 endfunction()
 
 # add_sc_test(<name> [TIMEOUT <seconds>] [LABELS <label>...] [LINK_LIBRARIES <lib>...])

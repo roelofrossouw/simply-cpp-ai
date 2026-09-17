@@ -1,0 +1,3 @@
+#pragma once
+
+#define SIMPLY_CPP_MODEL_DIR "@SIMPLY_CPP_MODEL_DIR@"

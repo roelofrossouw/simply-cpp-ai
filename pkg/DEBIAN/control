@@ -1,0 +1,9 @@
+Package: simply-cpp-ai-models
+Version: 2026-09
+Architecture: all
+Section: misc
+Priority: optional
+Maintainer: Roelof Rossouw
+Description: ONNX models used with simply-cpp-ai
+
+
