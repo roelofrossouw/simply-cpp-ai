@@ -10,7 +10,7 @@ fi
 
 pushd /var/www/build/repo || exit
   export GNUPGHOME=/var/www/build/signing
-  reprepro list jammy | grep -q "simply-cpp-ai-models.*${model_version}" || reprepro includedeb jammy "$model_file"
-  reprepro list noble | grep -q "simply-cpp-ai-models.*${model_version}" || reprepro includedeb noble "$model_file"
-  reprepro list resolute | grep -q "simply-cpp-ai-models.*${model_version}" || reprepro includedeb resolute "$model_file"
+  reprepro list jammy | grep -q "simply-cpp-models.*${model_version}" || reprepro includedeb jammy "$model_file"
+  reprepro list noble | grep -q "simply-cpp-models.*${model_version}" || reprepro includedeb noble "$model_file"
+  reprepro list resolute | grep -q "simply-cpp-models.*${model_version}" || reprepro includedeb resolute "$model_file"
 popd || exit
