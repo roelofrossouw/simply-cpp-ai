@@ -13,9 +13,12 @@ dirpath=$(realpath "$scriptpath"/..)
 echo "Installing $module locally from source in $dirpath"
 pushd "$dirpath" || exit
 cmake -DCMAKE_BUILD_TYPE=Release -B cmake-build-local -S . || exit
-cmake --build cmake-build-local -j 12 || exit
-ctest --test-dir cmake-build-local --output-on-failure || exit
-cpack --config cmake-build-local/CPackConfig.cmake -G DEB
-sudo cmake --install cmake-build-local
+
+pushd cmake-build-local || exit
+cmake --build . -j 12 || exit
+ctest --test-dir . --output-on-failure -LE network || exit
+cpack --config ./CPackConfig.cmake
+sudo cmake --install .
+popd || exit
 
 popd || exit

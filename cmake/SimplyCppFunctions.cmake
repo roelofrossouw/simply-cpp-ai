@@ -3,11 +3,25 @@ include(CMakePackageConfigHelpers)
 include(FetchContent)
 include(CMakeParseArguments)
 
+# CMake only carries an RPATH through the build tree; without an explicit install
+# RPATH it installs executables with none at all, so a shared sc library sitting
+# next to a binary in a relocatable install (Homebrew's Cellar, an unpacked .deb)
+# cannot be found at runtime. $ORIGIN/@loader_path keep this working regardless of
+# install prefix, since bin/ and lib/ are always siblings.
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if (APPLE)
+    set(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif (UNIX)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif ()
+
 # Bumped whenever these helpers gain or change something a module might rely on.
 # sc_bootstrap.cmake compares it against a module's own copy so an older installed
 # sc-core cannot quietly replace a newer one: a module built against helpers missing
 # what its CMakeLists.txt calls fails in ways that look nothing like the cause.
-set(SC_HELPERS_VERSION 8)
+set(SC_HELPERS_VERSION 9)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
