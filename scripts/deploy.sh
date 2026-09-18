@@ -18,4 +18,6 @@ cmake -DCMAKE_BUILD_TYPE=Release -B cmake-build-local -S . || exit
 echo "Syncing $dirpath to $server:$module"
 rsync -av ./ "$user@$server:/var/www/build/$module/" --exclude=".git" --exclude=".idea" --exclude="cmake-*" --delete || exit
 ssh "$user@$server" "/var/www/build/$module/scripts/run.sh"
+remote_result=$?
 popd || exit
+exit $remote_result

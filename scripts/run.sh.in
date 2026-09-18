@@ -21,8 +21,22 @@ else
     echo "No pre-build required"
 fi
 
-cmake -DCMAKE_BUILD_TYPE=Release -B $build_directory -S . || exit
-cmake --build $build_directory -j 12 || exit
+configure_and_build() {
+    cmake -DCMAKE_BUILD_TYPE=Release -B "$build_directory" -S . && \
+    cmake --build "$build_directory" -j 12
+}
+
+# /var/www/build is shared across all build-* servers, and $build_directory is
+# reused between deploys - if this host's toolchain/deps changed since it was
+# last configured here, the cache can go stale and hide the real state (e.g.
+# find_package() trusting a cached result instead of re-checking). One clean
+# retry recovers from that without needing to debug it by hand each time.
+if ! configure_and_build; then
+    echo "Build failed - cleaning $build_directory and retrying once in case its cache is stale for this host."
+    rm -rf "$build_directory"
+    configure_and_build || exit
+fi
+
 ctest --test-dir $build_directory --output-on-failure || exit
 cmake --install $build_directory
 
