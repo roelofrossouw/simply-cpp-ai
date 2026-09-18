@@ -39,8 +39,8 @@ if (NOT SIMPLY_CPP_MODEL)
         # Add tap with brew tap roelofrossouw/sc; brew trust roelofrossouw/sc
         execute_process(COMMAND brew -y install simply-cpp-models)
     else ()
-        # Add repo with sudo curl -fsSL https://apt.1web.co.za/setup.sh | bash
-        execute_process(COMMAND apt -y install simply-cpp-ai-models)
+        # Add repo with sudo curl -fsSL https://apt.roelof.co.za/setup.sh | bash
+        execute_process(COMMAND apt -y install simply-cpp-models)
     endif ()
     find_file(SIMPLY_CPP_MODEL NAMES yolo26n.onnx PATHS ${SIMPLY_CPP_MODEL_DIR})
     if (NOT SIMPLY_CPP_MODEL)
