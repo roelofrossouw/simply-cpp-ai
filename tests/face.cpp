@@ -7,15 +7,15 @@
 
 using namespace std;
 namespace fs = filesystem;
-const fs::path models("/opt/simply-cpp/models/");
+
 
 namespace {
     constexpr int MaxFiles = 100;
     constexpr size_t MaxFaces = 2;
     constexpr float MinFaceScore = 0.6f;
 
-    const auto DetModel = models / "det_10g.onnx";
-    const auto EmbedModel = models / "w600k_r50.onnx";
+    const fs::path DetModel = "det_10g.onnx";
+    const fs::path EmbedModel = "w600k_r50.onnx";
     array STRIDES = {8, 16, 32};
     constexpr int stride = 32;
 #ifdef __APPLE__
