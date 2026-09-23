@@ -9,14 +9,14 @@ The public API uses the `sc` namespace and builds on `simply-cpp` (sc-core) and 
 ### Homebrew (macOS)
 
 ```bash
-brew tap roelofrossouw/sc
+curl -fsSL https://apt.roelof.co.za/setup.sh | bash # taps roelofrossouw/sc - same command as the apt one below
 brew install simply-cpp simply-cpp-image simply-cpp-ai
 ```
 
 ### apt (Ubuntu)
 
 ```bash
-sudo curl -fsSL https://apt.roelof.co.za/setup.sh | bash
+curl -fsSL https://apt.roelof.co.za/setup.sh | bash # registers the apt repo - same command as the brew one above
 sudo apt -y install simply-cpp-dev simply-cpp-image-dev simply-cpp-ai-dev
 ```
 
@@ -53,8 +53,10 @@ target_link_libraries(myapp PRIVATE sc::sc-ai)
 
 - **simply-cpp (sc-core) and simply-cpp-image (sc-image)** - real dependencies of sc-ai's CMake package. Neither the Homebrew formula nor the apt package currently pulls them in automatically, so install all three explicitly (see above). FetchContent and the git submodule route fetch/build them automatically instead.
 - **nlohmann_json** - `nlohmann-json3-dev` on apt, `nlohmann-json` on brew; installed automatically if missing when building from source.
-- **ONNX Runtime** - on macOS, installed automatically via brew if missing. On Linux there is currently no apt package for it: the build downloads a prebuilt CUDA build straight from ONNX Runtime's GitHub releases and installs it under `/usr/local` (needs root). If you're building from source on Linux without a matching NVIDIA/CUDA setup, install your own ONNX Runtime build first so `find_package(onnxruntime CONFIG REQUIRED)` succeeds before this step runs.
-- **ONNX model files** - a separate `simply-cpp-models` package (same tap/repo as above) supplies the actual `.onnx` model weights. CMake auto-installs it at configure time if missing, so you generally don't need to do anything beyond having the Homebrew tap or apt repo set up.
+- **ONNX Runtime** - `simply-cpp-onnxruntime` on apt (a repackaged build of ONNX Runtime's own GPU/CUDA release - a matching NVIDIA/CUDA setup needs to already be present), `onnxruntime` on brew; installed automatically if missing when building from source.
+- **ONNX model files** - a separate `simply-cpp-models` package supplies the actual `.onnx` model weights; installed automatically if missing when building from source.
+
+Both of the above come from the same Homebrew tap / apt repo as `simply-cpp` itself, and CMake registers that tap/repo automatically the first time it needs to - nothing to set up by hand first, even on a completely fresh machine.
 
 ## Usage
 
