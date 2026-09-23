@@ -6,7 +6,7 @@ using namespace std;
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        cerr << "Warning: no image filename was passed as a parameter." << endl;
+        cerr << "Please specify an image to run detection on." << endl;
         return 0;
     }
 
