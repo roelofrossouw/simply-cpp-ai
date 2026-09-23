@@ -97,4 +97,4 @@ install(TARGETS sc-ai-demo RUNTIME DESTINATION bin COMPONENT runtime)
 #############
 # Packaging #
 #############
-package_sc_module()
+package_sc_module(DEPENDS simply-cpp-dev simply-cpp-image-dev simply-cpp-onnxruntime simply-cpp-models)
