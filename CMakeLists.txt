@@ -49,8 +49,8 @@ if (NOT SIMPLY_CPP_MODEL)
 endif ()
 configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
 
-find_or_fetch_package(sc-core GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp.git)
-find_or_fetch_package(sc-image GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp-image.git)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp)
+find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 
