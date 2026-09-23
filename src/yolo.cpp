@@ -157,4 +157,8 @@ namespace sc
     {
         return impl->annotated().show(timeout);
     }
+
+    nlohmann::ordered_json yolo::to_json() {
+        return impl->json();
+    }
 } // namespace sc
