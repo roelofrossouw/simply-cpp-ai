@@ -52,22 +52,7 @@ configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
 find_or_fetch_package(sc-core GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp.git)
 find_or_fetch_package(sc-image GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp-image.git)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
-## ONNXRuntime ##
-if (APPLE)
-    find_or_install_package(onnxruntime onnxruntime onnxruntime)
-else ()
-    # Deploy onnxruntime to unix with:
-    find_package(onnxruntime QUIET)
-    if (NOT onnxruntime_FOUND)
-        execute_process(COMMAND wget -c https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-linux-x64-gpu_cuda13-1.29.0.tgz WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        execute_process(COMMAND tar fxz onnxruntime-linux-x64-gpu_cuda13-1.29.0.tgz WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/include/ /usr/local/include/onnxruntime/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/lib/ /usr/local/lib/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        execute_process(COMMAND rsync -av onnxruntime-linux-x64-gpu_cuda13-1.29.0/lib/ /usr/local/lib64/ WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        execute_process(COMMAND ldconfig WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-        find_package(onnxruntime CONFIG REQUIRED)
-    endif ()
-endif ()
+find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 
 ###########
 # Objects #

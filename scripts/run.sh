@@ -21,23 +21,27 @@ else
     echo "No pre-build required"
 fi
 
-configure_and_build() {
+configure_build_test() {
     cmake -DCMAKE_BUILD_TYPE=Release -B "$build_directory" -S . && \
-    cmake --build "$build_directory" -j 12
+    cmake --build "$build_directory" -j 12 && \
+    ctest --test-dir "$build_directory" --output-on-failure
 }
 
 # /var/www/build is shared across all build-* servers, and $build_directory is
 # reused between deploys - if this host's toolchain/deps changed since it was
-# last configured here, the cache can go stale and hide the real state (e.g.
-# find_package() trusting a cached result instead of re-checking). One clean
-# retry recovers from that without needing to debug it by hand each time.
-if ! configure_and_build; then
-    echo "Build failed - cleaning $build_directory and retrying once in case its cache is stale for this host."
+# last configured here, the cache can go stale and hide the real state. That
+# includes things a plain build won't notice: find_file()/find_package() cache
+# their result in CMakeCache.txt, so e.g. a model file that wasn't installable
+# last time this was configured here stays "not found" (or the reverse) until
+# something forces a re-search - a test is often the first thing to actually
+# notice. One clean retry of configure+build+test recovers from that without
+# needing to debug it by hand each time.
+if ! configure_build_test; then
+    echo "Build or test failed - cleaning $build_directory and retrying once in case its cache is stale for this host."
     rm -rf "$build_directory"
-    configure_and_build || exit
+    configure_build_test || exit
 fi
 
-ctest --test-dir $build_directory --output-on-failure || exit
 cmake --install $build_directory
 
 pushd $build_directory || exit
