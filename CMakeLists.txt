@@ -24,11 +24,23 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 
 #models
 if (APPLE)
-    execute_process(COMMAND brew --prefix simply-cpp-models OUTPUT_VARIABLE BREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if (BREW_PREFIX)
-        message(STATUS "Found Homebrew package: ${BREW_PREFIX}")
+    # "brew --prefix simply-cpp-models" queries brew's formula database for
+    # that specific formula, which fails or returns the wrong answer inside
+    # Homebrew's own sandboxed formula build (e.g. building sc-ai itself via
+    # brew) since the sandbox can block that lookup. "brew --prefix" with no
+    # argument just returns HOMEBREW_PREFIX (a much simpler, always-available
+    # query), from which every formula's opt path follows the same fixed
+    # "<HOMEBREW_PREFIX>/opt/<formula>" layout - so build the path ourselves
+    # instead of asking brew to resolve the dependent formula.
+    execute_process(COMMAND brew --prefix OUTPUT_VARIABLE HOMEBREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if (NOT HOMEBREW_PREFIX)
+        if (CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+            set(HOMEBREW_PREFIX "/opt/homebrew")
+        else ()
+            set(HOMEBREW_PREFIX "/usr/local")
+        endif ()
     endif ()
-    set(SIMPLY_CPP_MODEL_DIR "${BREW_PREFIX}/share/simply-cpp-models")
+    set(SIMPLY_CPP_MODEL_DIR "${HOMEBREW_PREFIX}/opt/simply-cpp-models/share/simply-cpp-models")
 else ()
     set(SIMPLY_CPP_MODEL_DIR "/opt/simply-cpp/models")
 endif ()
