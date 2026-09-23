@@ -12,7 +12,6 @@ int main(int argc, char **argv) {
 
     sc::yolo yolo("yolo26n.onnx");
     yolo.detect(string(argv[1]));
-    const auto result = static_cast<nlohmann::ordered_json>(yolo);
-    cout << result.dump() << endl;
+    cout << yolo.to_json().dump() << endl;
     return 0;
 }

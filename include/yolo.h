@@ -30,6 +30,8 @@ namespace sc {
 
         bool display(int timeout) const;
 
+        nlohmann::ordered_json to_json();
+
     private:
         impl::yolo_impl *impl;
     };
