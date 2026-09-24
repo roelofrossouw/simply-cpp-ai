@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 set(SC_MODULE ai)
 project(simply-cpp-${SC_MODULE} LANGUAGES CXX)
-# The build helpers - get_sc_version(), add_sc_object(), add_sc_test(),
-# find_or_install_package() - come from simply-cpp core so every module configures the
-# same way instead of keeping its own copy, including the cmake_minimum_required()/
-# project()/CXX standard boilerplate. The bootstrap takes them from an installed sc
-# package, the copy in cmake/, or the sc repository, whichever it finds first.
 include(cmake/sc_bootstrap.cmake)
 
 # Options:
