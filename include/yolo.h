@@ -2,7 +2,7 @@
 
 #include <ostream>
 #include <string>
-#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp>
 #include <filesystem>
 
 namespace sc {
@@ -26,9 +26,7 @@ namespace sc {
 
         void detect(const std::filesystem::path &image_path) const;
 
-        void detect(const std::string &image_filename) const;
-
-        bool display(int timeout) const;
+        bool display(int timeout = 0) const;
 
         nlohmann::ordered_json to_json();
 
