@@ -1,19 +1,15 @@
 cmake_minimum_required(VERSION 3.22)
 set(SC_MODULE ai)
-project(simply-ai-${SC_MODULE} LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+project(simply-cpp-${SC_MODULE} LANGUAGES CXX)
+# The build helpers - get_sc_version(), add_sc_object(), add_sc_test(),
+# find_or_install_package() - come from simply-cpp core so every module configures the
+# same way instead of keeping its own copy, including the cmake_minimum_required()/
+# project()/CXX standard boilerplate. The bootstrap takes them from an installed sc
+# package, the copy in cmake/, or the sc repository, whichever it finds first.
+include(cmake/sc_bootstrap.cmake)
 
 # Options:
 option(SC_AI_BUILD_TESTS "Build simply-cpp-ai tests" ${PROJECT_IS_TOP_LEVEL})
-
-# The build helpers - get_sc_version(), add_sc_object(), add_sc_test(),
-# find_or_install_package() - come from simply-cpp core so every module configures the
-# same way instead of keeping its own copy. The bootstrap takes them from an installed
-# sc package, the copy in cmake/, or the sc repository, whichever it finds first.
-include(cmake/sc_bootstrap.cmake)
 
 get_sc_version()
 message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
