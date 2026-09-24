@@ -14,3 +14,9 @@ pushd /var/www/build/repo || exit
   reprepro list noble | grep -q "simply-cpp-models.*${model_version}" || reprepro includedeb noble "$model_file"
   reprepro list resolute | grep -q "simply-cpp-models.*${model_version}" || reprepro includedeb resolute "$model_file"
 popd || exit
+
+# This server's own apt package lists were last refreshed before the includedeb
+# calls above, so find_or_install_package(sc-models ...) below would otherwise
+# see this server's already-installed (older) simply-cpp-models as "the newest
+# version" and never notice a new one just got published.
+apt-get update
