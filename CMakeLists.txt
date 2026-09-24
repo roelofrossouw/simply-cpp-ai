@@ -23,40 +23,12 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 
 #models
-if (APPLE)
-    # "brew --prefix simply-cpp-models" queries brew's formula database for
-    # that specific formula, which fails or returns the wrong answer inside
-    # Homebrew's own sandboxed formula build (e.g. building sc-ai itself via
-    # brew) since the sandbox can block that lookup. "brew --prefix" with no
-    # argument just returns HOMEBREW_PREFIX (a much simpler, always-available
-    # query), from which every formula's opt path follows the same fixed
-    # "<HOMEBREW_PREFIX>/opt/<formula>" layout - so build the path ourselves
-    # instead of asking brew to resolve the dependent formula.
-    execute_process(COMMAND brew --prefix OUTPUT_VARIABLE HOMEBREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-    if (NOT HOMEBREW_PREFIX)
-        if (CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-            set(HOMEBREW_PREFIX "/opt/homebrew")
-        else ()
-            set(HOMEBREW_PREFIX "/usr/local")
-        endif ()
-    endif ()
-    set(SIMPLY_CPP_MODEL_DIR "${HOMEBREW_PREFIX}/opt/simply-cpp-models/share/simply-cpp-models")
-else ()
-    set(SIMPLY_CPP_MODEL_DIR "/opt/simply-cpp/models")
-endif ()
-
-find_file(SIMPLY_CPP_MODEL NAMES yolo26n.onnx PATHS ${SIMPLY_CPP_MODEL_DIR})
-if (NOT SIMPLY_CPP_MODEL)
-    if (APPLE)
-        execute_process(COMMAND brew -y install simply-cpp-models)
-    else ()
-        execute_process(COMMAND apt -y install simply-cpp-models)
-    endif ()
-    find_file(SIMPLY_CPP_MODEL NAMES yolo26n.onnx PATHS ${SIMPLY_CPP_MODEL_DIR})
-    if (NOT SIMPLY_CPP_MODEL)
-        message(FATAL_ERROR "Could not find onnx models in ${SIMPLY_CPP_MODEL_DIR}.")
-    endif ()
-endif ()
+# simply-cpp-models ships as a real find_or_install_package() dependency like
+# everything else - sc-modelsConfig.cmake (in the package itself) just reports
+# SC_MODELS_DIR, rather than this CMakeLists guessing brew/apt install
+# locations and shelling out to find/install the package by hand.
+find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
+set(SIMPLY_CPP_MODEL_DIR "${SC_MODELS_DIR}")
 configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
 
 find_or_install_package(sc-core simply-cpp-dev simply-cpp)
