@@ -13,9 +13,9 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 # Dependencies #
 ################
 
-find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(sc-core simply-cpp-dev simply-cpp)
 find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
+find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
 set(SIMPLY_CPP_MODEL_DIR "${SC_MODELS_DIR}")
