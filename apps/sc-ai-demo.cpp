@@ -11,6 +11,6 @@ int main(int argc, char **argv) {
 
     sc::yolo yolo("yolo26n.onnx");
     yolo.detect(argv[1]);
-    cout << yolo.to_json().dump() << endl;
+    cout << yolo << endl;
     return 0;
 }
