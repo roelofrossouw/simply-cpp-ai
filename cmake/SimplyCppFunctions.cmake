@@ -39,7 +39,7 @@ endif ()
 # sc_bootstrap.cmake compares it against a module's own copy so an older installed
 # sc-core cannot quietly replace a newer one: a module built against helpers missing
 # what its CMakeLists.txt calls fails in ways that look nothing like the cause.
-set(SC_HELPERS_VERSION 16)
+set(SC_HELPERS_VERSION 17)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -461,7 +461,8 @@ endfunction()
 # a dependency's CMake config - installing that on a runtime-only machine
 # would be pointless, since nothing there ever calls find_package().
 function(package_sc_module)
-    cmake_parse_arguments(ARG "" "" "DEPENDS;DEVELOPMENT_DEPENDS" ${ARGN})
+    # cmake_parse_arguments(ARG "" "" "DEPENDS;DEVELOPMENT_DEPENDS" ${ARGN})
+    cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
     if (APPLE)
         set(CODENAME apple)
         set(CPACK_GENERATOR "TGZ")
@@ -501,15 +502,10 @@ function(package_sc_module)
         set(CPACK_DEBIAN_RUNTIME_PACKAGE_DEPENDS "${ARG_DEPENDS_LIST}")
         set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS "${ARG_DEPENDS_LIST}")
     endif ()
-    if (ARG_DEVELOPMENT_DEPENDS)
-        string(REPLACE ";" ", " ARG_DEVELOPMENT_DEPENDS_LIST "${ARG_DEVELOPMENT_DEPENDS}")
-        if (CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS)
-            set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS
-                    "${CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS}, ${ARG_DEVELOPMENT_DEPENDS_LIST}")
-        else ()
-            set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS "${ARG_DEVELOPMENT_DEPENDS_LIST}")
-        endif ()
-    endif ()
+#    if (ARG_DEVELOPMENT_DEPENDS)
+#        string(REPLACE ";" ", " ARG_DEVELOPMENT_DEPENDS_LIST "${ARG_DEVELOPMENT_DEPENDS}")
+#        set(CPACK_DEBIAN_DEVELOPMENT_PACKAGE_DEPENDS "${ARG_DEVELOPMENT_DEPENDS_LIST}")
+#    endif ()
     include(CPack)
 endfunction()
 
