@@ -22,19 +22,13 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 # Dependencies #
 ################
 
-#models
-# simply-cpp-models ships as a real find_or_install_package() dependency like
-# everything else - sc-modelsConfig.cmake (in the package itself) just reports
-# SC_MODELS_DIR, rather than this CMakeLists guessing brew/apt install
-# locations and shelling out to find/install the package by hand.
+find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp)
+find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
+find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
 set(SIMPLY_CPP_MODEL_DIR "${SC_MODELS_DIR}")
 configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
-
-find_or_install_package(sc-core simply-cpp-dev simply-cpp)
-find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
-find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
-find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 
 ###########
 # Objects #
