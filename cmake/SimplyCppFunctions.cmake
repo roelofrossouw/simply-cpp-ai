@@ -3,13 +3,18 @@
 # but triggers an author warning and a "pretend" fallback project, since CMake checks
 # where the call textually lives, not just which scope it executes in). Only the CXX
 # standard/PIC settings that follow project() are safe to share this way.
-if (NOT SC_MODULE)
-    message(FATAL_ERROR "set(SC_MODULE <name>) before including the simply-cpp build helpers")
+#
+# SC_MODULE is only set by a simply-cpp module building itself from source - this file
+# is ALSO included, via sc-coreConfig.cmake and friends, by every downstream consumer's
+# find_package(sc-core)/find_package(sc-image)/etc (so they get find_or_install_package()
+# and the rest too), and those never set it. Skip silently rather than erroring: an
+# ordinary consumer setting its own C++ standard is none of this file's business anyway.
+if (SC_MODULE)
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -34,7 +39,7 @@ endif ()
 # sc_bootstrap.cmake compares it against a module's own copy so an older installed
 # sc-core cannot quietly replace a newer one: a module built against helpers missing
 # what its CMakeLists.txt calls fails in ways that look nothing like the cause.
-set(SC_HELPERS_VERSION 15)
+set(SC_HELPERS_VERSION 16)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
