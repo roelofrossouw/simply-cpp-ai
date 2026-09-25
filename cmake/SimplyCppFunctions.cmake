@@ -1,14 +1,6 @@
-# cmake_minimum_required() and project() can't move here - CMake requires both to be
-# literal calls in the top-level CMakeLists.txt (an include()'d project() still runs,
-# but triggers an author warning and a "pretend" fallback project, since CMake checks
-# where the call textually lives, not just which scope it executes in). Only the CXX
-# standard/PIC settings that follow project() are safe to share this way.
-#
-# SC_MODULE is only set by a simply-cpp module building itself from source - this file
-# is ALSO included, via sc-coreConfig.cmake and friends, by every downstream consumer's
-# find_package(sc-core)/find_package(sc-image)/etc (so they get find_or_install_package()
-# and the rest too), and those never set it. Skip silently rather than erroring: an
-# ordinary consumer setting its own C++ standard is none of this file's business anyway.
+# Keep project()/cmake_minimum_required() in the top-level CMakeLists.txt.
+# Only the post-project C++/PIC defaults are safe here.
+# This file is also loaded by downstream consumers via find_package(), where SC_MODULE is unset.
 if (SC_MODULE)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,11 +13,7 @@ include(CMakePackageConfigHelpers)
 include(FetchContent)
 include(CMakeParseArguments)
 
-# CMake only carries an RPATH through the build tree; without an explicit install
-# RPATH it installs executables with none at all, so a shared sc library sitting
-# next to a binary in a relocatable install (Homebrew's Cellar, an unpacked .deb)
-# cannot be found at runtime. $ORIGIN/@loader_path keep this working regardless of
-# install prefix, since bin/ and lib/ are always siblings.
+# Keep runtime search paths valid for relocatable installs.
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -35,10 +23,6 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-# Bumped whenever these helpers gain or change something a module might rely on.
-# sc_bootstrap.cmake compares it against a module's own copy so an older installed
-# sc-core cannot quietly replace a newer one: a module built against helpers missing
-# what its CMakeLists.txt calls fails in ways that look nothing like the cause.
 set(SC_HELPERS_VERSION 17)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
@@ -85,8 +69,7 @@ function(get_sc_version)
 
     if ("${version}" STREQUAL "")
         set(version "${SC_VERSION_DEFAULT}")
-        message(WARNING "No usable git tag and no ${SC_VERSION_FILE}, defaulting to version ${version}."
-                " Configure once in a tagged checkout to create the file.")
+        message(WARNING "No usable git tag and no ${SC_VERSION_FILE}; defaulting to ${version}.")
     endif ()
 
     set(SC_VERSION "${version}" PARENT_SCOPE)
@@ -120,16 +103,7 @@ function(read_sc_version_file version_file output)
     set(${output} "${version}" PARENT_SCOPE)
 endfunction()
 
-# sc_find_package_any_case(<package> [<find_package args>...])
-#
-# find_package() under one spelling can miss what the other finds: distributions do not
-# agree on whether a config package is installed as OpenCV or opencv. Asking under the
-# lowercase name is no answer on its own, because the config file sets its variables in
-# its own case, so a caller is left checking OpenCV_FOUND against an opencv_FOUND that
-# was never meant to match.
-#
-# Tries the name as given and then its lowercase form, and reports the result under the
-# spelling the caller used, whichever one actually resolved.
+# Try the requested package name and the lowercase form, and report success under the caller's spelling.
 macro(sc_find_package_any_case package)
     find_package(${package} QUIET ${ARGN})
 
@@ -146,16 +120,7 @@ macro(sc_find_package_any_case package)
     endif ()
 endmacro()
 
-# sc_ensure_package_source()
-#
-# Makes sure this machine can actually install our own simply-cpp-* packages
-# (simply-cpp-models, simply-cpp-onnxruntime, ...) before find_or_install_package()
-# tries to: taps roelofrossouw/sc on Homebrew, or registers the apt.roelof.co.za
-# repo on Ubuntu - the same single command documented for people setting a machine
-# up by hand, run automatically instead. Cheap to call repeatedly: it checks
-# locally first and only reaches out when the tap/repo isn't there yet, so this
-# adds no real cost for the (far more common) third-party packages that don't
-# need it at all.
+# Ensure the simply-cpp package source is registered before installing our own packages.
 function(sc_ensure_package_source)
     if (APPLE)
         execute_process(COMMAND brew --repository OUTPUT_VARIABLE SC_BREW_REPO OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -174,16 +139,8 @@ function(sc_ensure_package_source)
     execute_process(COMMAND bash -c "curl -fsSL https://apt.roelof.co.za/setup.sh | bash")
 endfunction()
 
-# find_or_install_package(<package> <apt name> <brew name> [COMPONENTS <component>...])
-#
-# Finds a dependency, installing it through the system package manager first if it is
-# missing. Anything the caller needs to set up beforehand - PostgreSQL_ROOT and the
-# like - should be set before the call.
-#
-# A macro rather than a function: find_package() sets its result variables in the
-# calling scope, and a function would swallow them. Callers wanting OpenCV_LIBS or
-# OpenCV_INCLUDE_DIRS got nothing back. Imported targets are global, which is why the
-# callers that use only those never noticed.
+# find_or_install_package(<package> <apt name> <brew name> [COMPONENTS ...])
+# A macro so find_package() result variables land in the caller's scope.
 macro(find_or_install_package package apt_name brew_name)
     cmake_parse_arguments(SC_PACKAGE "" "" "COMPONENTS" ${ARGN})
     set(SC_PACKAGE_ARGS)
@@ -206,9 +163,7 @@ macro(find_or_install_package package apt_name brew_name)
             execute_process(COMMAND brew install ${brew_name} RESULT_VARIABLE SC_PACKAGE_INSTALL_RESULT)
         endif ()
 
-        # Re-check the package that was asked for. This used to look for CURL whatever
-        # the argument was, which happened to suit the one caller and would have masked
-        # any other.
+        # Re-check the package that was asked for.
         sc_find_package_any_case(${package} ${SC_PACKAGE_ARGS})
         if (NOT ${package}_FOUND)
             message(FATAL_ERROR "Failed to install or locate ${package}"
@@ -219,16 +174,8 @@ macro(find_or_install_package package apt_name brew_name)
     message(STATUS "${package} found - ${${package}_VERSION}")
 endmacro()
 
-# find_or_fetch_package(<package> [GIT_REPOSITORY <url>] [GIT_TAG <ref>] [VERSION <version>]
-#                       [COMPONENTS <component>...] [FORCE <bool>] [DECLARE_ARGS <arg>...])
-#
-# Uses an installed <package> when there is one and builds it from source otherwise,
-# which is how a module depends on another simply-cpp module without requiring it to
-# be installed first. FORCE skips the lookup and always fetches.
-#
-# A macro for the same reason find_or_install_package is one: find_package() and
-# FetchContent set their results - <package>_VERSION, <package>_SOURCE_DIR and the
-# rest - in the calling scope, and a function would swallow them.
+# find_or_fetch_package(<package> ...)
+# Use an installed package when present; otherwise fetch it.
 macro(find_or_fetch_package package)
     cmake_parse_arguments(SC_FETCH "" "GIT_REPOSITORY;GIT_TAG;VERSION;FORCE" "COMPONENTS;DECLARE_ARGS" ${ARGN})
 
@@ -238,8 +185,6 @@ macro(find_or_fetch_package package)
     endif ()
 
     if (SC_FETCH_FORCE)
-        # Not merely skipped: a stale value from an earlier configure would otherwise
-        # look like a successful lookup.
         set(${package}_FOUND FALSE)
     else ()
         message(STATUS "Detecting ${package}")
@@ -267,17 +212,10 @@ macro(find_or_fetch_package package)
     endif ()
 endmacro()
 
-# add_sc_object(<name> [SOURCES <file>...] [INCLUDE_DIRS <dir>...]
-#               [LINK_LIBRARIES <lib>...] [PUBLIC_LINK_LIBRARIES <lib>...])
-#
-# Compiles src/<name>.cpp into an object library that the module's consolidated
-# libraries are built from. SOURCES adds anything else that belongs in the same
-# object - vendored third party code, say - and INCLUDE_DIRS what it needs to find
-# its headers. PUBLIC_LINK_LIBRARIES propagates to the consolidated libraries, for a
-# dependency a consumer has to link as well.
+# add_sc_object(<name> ...)
+# Builds src/<name>.cpp into an object library for the module's consolidated libraries.
 function(add_sc_object object)
-    # sc-obj-, not sc-: sc-<module> belongs to the consolidated library, and a module
-    # with a source file named after itself would collide with it.
+    # sc-obj-, not sc-: sc-<module> is the final library.
     set(object_name "sc-obj-${object}")
     set(source_file "src/${object}.cpp")
     set(header_file "include/${object}.h")
@@ -306,9 +244,7 @@ function(add_sc_object object)
 endfunction()
 
 # sc_module_name(<output>)
-#
-# The name a module's library and package go by, sc-<SC_MODULE>: sc-core, sc-db. Set
-# SC_MODULE at the top of the module's CMakeLists.txt, before these are called.
+# Returns the module library/package name: sc-<SC_MODULE>.
 function(sc_module_name output)
     if (NOT SC_MODULE)
         message(FATAL_ERROR "SC_MODULE is not set."
@@ -317,16 +253,8 @@ function(sc_module_name output)
     set(${output} "sc-${SC_MODULE}" PARENT_SCOPE)
 endfunction()
 
-# add_sc_libraries([NAME <name>] [DESCRIPTION <text>] [VERSION <version>] [INCLUDE_DIR <dir>])
-#
-# Builds the pair of libraries every module exports from the objects collected in
-# SOURCE_OBJECTS: a static <name> and a shared <name>-shared, aliased sc::<name> and
-# sc::<name>-shared. NAME defaults to sc-<SC_MODULE>. Both are appended to
-# SOURCE_LIBRARIES for install_sc_module().
-#
-# The two are siblings built from the same objects. Neither links the other: doing so
-# put the static library on the link line of anyone who chose the shared one, which is
-# the same code twice.
+# add_sc_libraries([NAME ...])
+# Build the static and shared module libraries from SOURCE_OBJECTS.
 function(add_sc_libraries)
     set(one_value_args NAME DESCRIPTION VERSION INCLUDE_DIR)
     cmake_parse_arguments(ARG "" "${one_value_args}" "" ${ARGN})
@@ -370,12 +298,7 @@ function(add_sc_libraries)
         target_link_libraries(${target} PUBLIC ${dependencies})
         list(APPEND SOURCE_LIBRARIES ${target})
         if (${kind} STREQUAL SHARED)
-            # EXPORT lives on this call, not install_sc_module()'s: that one only
-            # installs the static archive now (see its comment for why re-touching
-            # the shared library's real file there breaks things two different
-            # ways). A target's EXPORT info is generated from whichever call
-            # actually places its real file, so the shared target has to be
-            # exported from here - the one call that actually does that.
+            # Export the shared library from the call that installs its real file.
             install(TARGETS ${target} EXPORT ${name}Targets
                     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT runtime NAMELINK_COMPONENT development)
         endif ()
@@ -384,12 +307,8 @@ function(add_sc_libraries)
     set(SOURCE_LIBRARIES "${SOURCE_LIBRARIES}" PARENT_SCOPE)
 endfunction()
 
-# install_sc_module([NAME <name>] [VERSION <version>] [CONFIG_TEMPLATE <file>] [PATH_VARS <var>...])
-#
-# Installs everything in SOURCE_LIBRARIES plus the module's headers, and writes the
-# <name>Config.cmake / <name>ConfigVersion.cmake a consumer finds with
-# find_package(<name>). NAME defaults to sc-<SC_MODULE>, and CONFIG_TEMPLATE to
-# cmake/<name>Config.cmake.in.
+# install_sc_module([NAME ...])
+# Install headers and package config for consumers.
 function(install_sc_module)
     set(one_value_args NAME VERSION CONFIG_TEMPLATE)
     set(multi_value_args PATH_VARS)
@@ -411,24 +330,11 @@ function(install_sc_module)
 
     set(package_destination "${CMAKE_INSTALL_LIBDIR}/cmake/${name}")
 
-    # Only the static archive is installed here. The shared library is already
-    # fully installed - real file in COMPONENT runtime, namelink in development -
-    # by add_sc_libraries()'s own call, which also carries its EXPORT (a target's
-    # export info is generated from whichever install(TARGETS) call actually
-    # places its real file, so it has to be exported from there, not here). Two
-    # things were tried and both broke: a blanket "COMPONENT development" here
-    # re-installed the shared library's real .so a second time, into the -dev
-    # package too, which made dpkg refuse to unpack both packages together; a
-    # NAMELINK_ONLY re-declaration of it here (to carry EXPORT without
-    # re-placing the real file) instead dropped the shared target from the
-    # generated Targets.cmake entirely, since this call no longer referenced its
-    # real file for CMake to generate an IMPORTED_LOCATION from. Excluding it
-    # from this call altogether avoids both.
+    # Install only the static archive here; the shared library is exported from its own install() call.
     set(sc_static_libraries "${SOURCE_LIBRARIES}")
     list(FILTER sc_static_libraries EXCLUDE REGEX "-shared$")
     install(TARGETS ${sc_static_libraries} EXPORT ${name}Targets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT development)
-    # Finder litters include/ and install(DIRECTORY) copies whatever it finds.
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ COMPONENT development DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN ".DS_Store" EXCLUDE)
     install(EXPORT ${name}Targets FILE ${name}Targets.cmake NAMESPACE sc:: DESTINATION ${package_destination} COMPONENT development)
 
@@ -437,29 +343,13 @@ function(install_sc_module)
             PATH_VARS ${ARG_PATH_VARS})
     write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
             VERSION ${ARG_VERSION} COMPATIBILITY SameMajorVersion)
-    # ${CMAKE_INSTALL_LIBDIR}, not a literal lib: the export above already uses it, and
-    # the two have to agree on a distribution that uses lib64.
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${name}Config.cmake
             ${CMAKE_CURRENT_BINARY_DIR}/${name}ConfigVersion.cmake
             DESTINATION ${package_destination} COMPONENT development)
 endfunction()
 
-# package_sc_module([DEPENDS <apt package>...] [DEVELOPMENT_DEPENDS <apt package>...])
-#
-# DEPENDS lists other apt packages this module's own Depends: needs beyond
-# what CPACK_DEBIAN_PACKAGE_SHLIBDEPS finds on its own - it only sees a
-# dependency that dpkg already tracks as belonging to some package, so a
-# simply-cpp-* dependency found via an untracked local install (or a purely
-# static one whose symbols got embedded rather than dynamically linked) is
-# invisible to it regardless of whether the code actually needs it at
-# runtime. Applied to both the runtime and development components, since
-# both currently carry the actual shared library.
-#
-# DEVELOPMENT_DEPENDS adds further apt packages only to the -dev component's
-# Depends:. Use it for a *-dev package (e.g. libopencv-dev) that a consumer's
-# own find_package()/find_dependency() call needs at configure time to locate
-# a dependency's CMake config - installing that on a runtime-only machine
-# would be pointless, since nothing there ever calls find_package().
+# package_sc_module([DEPENDS ...] [DEV_DEPENDS ...])
+# Set Debian runtime/dev dependency metadata for the generated package.
 function(package_sc_module)
     cmake_parse_arguments(ARG "" "" "DEPENDS;DEV_DEPENDS" ${ARGN})
     # cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
@@ -509,16 +399,10 @@ function(package_sc_module)
     include(CPack)
 endfunction()
 
-# add_sc_test(<name> [TIMEOUT <seconds>] [LABELS <label>...] [LINK_LIBRARIES <lib>...])
-#
-# Builds <name>.cpp in the current directory into test-<name> and registers it with
-# ctest. Tests report every failed check on stderr and exit non-zero (see sc_test.h).
-#
-# LINK_LIBRARIES defaults to ${SC_TEST_LINK_LIBRARIES}, so a module sets that once in
-# its tests/CMakeLists.txt rather than repeating the library on every call.
+# add_sc_test(<name> ...)
+# Build a CTest target from <name>.cpp.
 function(add_sc_test name)
-    # Prefix ARG, not SC_TEST: cmake_parse_arguments clears the variables it owns, and
-    # SC_TEST_LINK_LIBRARIES is the directory-level default we want to fall back to.
+    # Prefix ARG to avoid clobbering the directory-level SC_TEST_LINK_LIBRARIES default.
     set(options)
     set(one_value_args TIMEOUT)
     set(multi_value_args LABELS LINK_LIBRARIES)
@@ -539,7 +423,6 @@ function(add_sc_test name)
     set(target "test-${name}")
     add_executable(${target} "${name}.cpp")
     target_link_libraries(${target} PRIVATE ${ARG_LINK_LIBRARIES})
-    # The test's own directory first, then sc_test.h wherever the sc package put it.
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${SC_TEST_INCLUDE_DIR})
 
     add_test(NAME ${target} COMMAND ${target})
