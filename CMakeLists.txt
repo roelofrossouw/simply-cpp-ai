@@ -37,6 +37,11 @@ add_sc_object(yolo
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
+add_sc_object(facedetector
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
+
+
 ######################
 # Exported Libraries #
 ######################
