@@ -86,6 +86,21 @@ int main() {
 
 `sc::onnx` (`<onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
 
+PaddleOCR is available through `sc::ocr`. It detects text regions, recognises each line, and reports text, confidence, and its bounding box in the source image:
+
+```cpp
+#include <ocr.h>
+
+sc::ocr reader; // Uses paddle_det_s and paddle_rec_s from simply-cpp-models
+reader.detect("document.jpg");
+std::cout << reader.text() << std::endl;
+std::cout << reader.to_json().dump(2) << std::endl;
+```
+
+Use the optional constructor arguments to select detection and recognition models, and an optional third path for a custom recognition dictionary. `reader.lines()` returns the recognised line records directly; `reader.display()` shows the source image with text boxes.
+
+`sc::identity` uses the same PaddleOCR engine and bundled English models for its document reads, so Tesseract is no longer required. Identity recognition remains English-only; the former Tesseract tessdata and language overrides are not applicable.
+
 ### Face detection and reusable face data
 
 `sc::facedetector` returns detected faces as `std::vector<sc::face>`. Each `sc::face` owns normalized 512-value features and can optionally retain its aligned face image:

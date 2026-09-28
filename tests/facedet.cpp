@@ -5,7 +5,7 @@ using namespace std;
 namespace fs = filesystem;
 
 namespace {
-    constexpr int MaxFiles = 100;
+    constexpr int MaxFiles = 10;
     constexpr size_t MaxFaces = 2;
     constexpr float MinFaceScore = 0.6f;
 }

@@ -18,7 +18,6 @@ find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
-config_or_install_package(Tesseract libtesseract-dev tesseract)
 
 set(SIMPLY_CPP_MODEL_DIR "${SC_MODELS_DIR}")
 configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
@@ -39,6 +38,11 @@ add_sc_object(yolo
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
+add_sc_object(ocr
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
+target_include_directories(sc-obj-ocr PRIVATE ${CMAKE_BINARY_DIR}/generated)
+
 add_sc_object(facedetector
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
@@ -48,8 +52,8 @@ add_sc_object(face
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
 add_sc_object(identity
-        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json PkgConfig::Tesseract
-        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json PkgConfig::Tesseract)
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
 
 ######################
@@ -82,6 +86,10 @@ find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
 add_executable(load-faces apps/load-faces.cpp)
 target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
 install(TARGETS load-faces RUNTIME DESTINATION bin COMPONENT runtime)
+
+add_executable(process-id apps/process-id.cpp)
+target_link_libraries(process-id PRIVATE sc::sc-ai)
+install(TARGETS process-id RUNTIME DESTINATION bin COMPONENT runtime)
 
 #############
 # Packaging #
