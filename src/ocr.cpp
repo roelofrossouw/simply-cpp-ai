@@ -85,7 +85,6 @@ namespace sc {
                 : detector(detection_model),
                   recognizer(recognition_model),
                   characters(load_dictionary(find_dictionary(recognition_model, dictionary))) {
-                std::cout << "Loading OCR models..." << std::endl;
             }
 
             void set_threshold(const double threshold) {

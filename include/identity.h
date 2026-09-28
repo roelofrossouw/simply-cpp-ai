@@ -4,6 +4,9 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <vector>
+
+#include "face.h"
 #include <percent.h>
 #include <nlohmann/json.hpp>
 
@@ -15,10 +18,9 @@ namespace sc {
     /// A South African identity document - smart ID card, green ID book or
     /// passport - read from a photograph.
     ///
-    /// The whole image is recognised and the identity number is then located by
-    /// pattern, so reading does not depend on the document being flat, fully in
-    /// frame, or the right way up. Every number reported has at least passed a
-    /// Luhn check; confidence() reports how many independent checks agreed.
+    /// OCR text from the image is parsed for an identity number. Every number
+    /// reported has at least passed a Luhn check; confidence() reports how many
+    /// independent checks agreed.
     ///
     /// A passport is read from its machine readable zone, where the identity
     /// number sits under a check digit, so those reads verify themselves. A
@@ -29,21 +31,10 @@ namespace sc {
     ///     if (document.confidence() >= 90) store(document.to_json());
     ///     else queue_for_review(document);
     ///
-    /// Reading is thread safe; each thread builds its own OCR models on first
-    /// use, so reading a batch in parallel scales, but sharing one identity
-    /// object between threads does not.
+    /// Reading is thread safe; each thread builds its own OCR models on first use.
     class identity {
     public:
         enum class document { unknown, id_card, id_book, passport };
-
-        /// How hard to work at a document that does not read easily. Quick runs
-        /// only the four orientations of the image as it is, which reads a
-        /// clear photograph in a few hundred milliseconds. Thorough escalates
-        /// through channel and contrast treatments for the rest, which costs
-        /// seconds on an image it ultimately cannot read. Batches are usually
-        /// best served by a quick pass over everything followed by a thorough
-        /// pass over the misses.
-        enum class effort { quick, thorough };
 
         /// Independent corroborations of a recognised identity number. Each
         /// comes from a different part of the document, so agreement between
@@ -69,11 +60,13 @@ namespace sc {
         /// Reads the document in an image. Never throws for an unreadable
         /// document - check has_id_number() - but does throw when the file
         /// cannot be opened or the OCR models are unavailable.
-        explicit identity(const std::filesystem::path &image_path, effort level = effort::thorough);
+        /// Set face_detection to also detect embeddings in the source image.
+        explicit identity(const std::filesystem::path &image_path, bool face_detection = false);
 
         /// Reads a document, discarding any previous result, and returns
-        /// whether an identity number was recognised.
-        bool read(const std::filesystem::path &image_path, effort level = effort::thorough);
+        /// whether an identity number was recognised. Face detection is
+        /// optional and disabled by default.
+        bool read(const std::filesystem::path &image_path, bool face_detection = false);
 
         [[nodiscard]] document document_type() const noexcept;
         [[nodiscard]] std::string document_type_name() const;
@@ -92,7 +85,11 @@ namespace sc {
         /// number. Unlike confidence(), this says nothing about correctness.
         [[nodiscard]] percent ocr_confidence() const;
 
-        /// Rotation in degrees that had to be applied to read the document.
+        /// Face embeddings detected in the source image when face detection
+        /// was requested. Images are not retained with the embeddings.
+        [[nodiscard]] const std::vector<face> &faces() const noexcept;
+
+        /// Rotation in degrees applied before OCR. Currently always zero.
         [[nodiscard]] int rotation() const noexcept;
 
         [[nodiscard]] const std::string &surname() const noexcept;
@@ -145,6 +142,8 @@ namespace sc {
         std::string passport_number_;
         std::string date_of_issue_;
         std::string date_of_expiry_;
+        std::vector<face> faces_;
+        bool face_detection_performed_{};
 
         friend class impl::identity_reader;
     };
