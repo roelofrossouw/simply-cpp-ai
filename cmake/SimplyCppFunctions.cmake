@@ -23,7 +23,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 17)
+set(SC_HELPERS_VERSION 18)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -167,6 +167,57 @@ macro(find_or_install_package package apt_name brew_name)
         sc_find_package_any_case(${package} ${SC_PACKAGE_ARGS})
         if (NOT ${package}_FOUND)
             message(FATAL_ERROR "Failed to install or locate ${package}"
+                    " (install result=${SC_PACKAGE_INSTALL_RESULT})")
+        endif ()
+    endif ()
+
+    message(STATUS "${package} found - ${${package}_VERSION}")
+endmacro()
+
+macro(config_or_install_package package apt_name brew_name)
+    cmake_parse_arguments(SC_PACKAGE "" "" "COMPONENTS" ${ARGN})
+    set(SC_PACKAGE_ARGS)
+    if (SC_PACKAGE_COMPONENTS)
+        set(SC_PACKAGE_ARGS COMPONENTS ${SC_PACKAGE_COMPONENTS})
+    endif ()
+    string(TOLOWER "${package}" package_lower)
+
+    message(STATUS "Detecting ${package}")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(${package} IMPORTED_TARGET ${package_lower})
+
+    # Tesseract ships pkg-config rather than a CMake config on both platforms.
+    #find_package(PkgConfig REQUIRED)
+    #pkg_check_modules(Tesseract IMPORTED_TARGET tesseract)
+    #if (NOT Tesseract_FOUND)
+    #    if (UNIX AND EXISTS "/usr/bin/apt")
+    #        message(STATUS "tesseract not found, attempting apt installation...")
+    #        execute_process(COMMAND sudo apt -y install libtesseract-dev)
+    #    elseif (APPLE)
+    #        message(STATUS "tesseract not found, attempting brew installation...")
+    #        execute_process(COMMAND brew install tesseract)
+    #    endif ()
+    #    pkg_check_modules(Tesseract REQUIRED IMPORTED_TARGET tesseract)
+    #endif ()
+    #message(STATUS "Tesseract found - ${Tesseract_VERSION}")
+
+
+
+    if (NOT ${package}_FOUND)
+        sc_ensure_package_source()
+        if (UNIX AND EXISTS "/usr/bin/apt")
+            message(STATUS "${package} not found, attempting apt installation...")
+            execute_process(COMMAND sudo apt -y install ${apt_name} RESULT_VARIABLE SC_PACKAGE_INSTALL_RESULT)
+        endif ()
+        if (APPLE)
+            message(STATUS "${package} not found, attempting brew installation...")
+            execute_process(COMMAND brew install ${brew_name} RESULT_VARIABLE SC_PACKAGE_INSTALL_RESULT)
+        endif ()
+
+        # Re-check the package that was asked for.
+        pkg_check_modules(${package} IMPORTED_TARGET ${package_lower})
+        if (NOT ${package}_FOUND)
+            message(FATAL_ERROR "Failed to install or configure ${package}"
                     " (install result=${SC_PACKAGE_INSTALL_RESULT})")
         endif ()
     endif ()

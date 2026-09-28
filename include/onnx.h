@@ -3,27 +3,45 @@
 #include <string>
 #include "image.h"
 
-namespace sc
-{
-    namespace impl
-    {
+namespace sc {
+    namespace impl {
         class onnx_impl;
     }
 
-    class onnx
-    {
+    class output {
     public:
-        onnx(const std::string& model);
+        output(std::vector<int64_t> s, const float *d) : shape(s) {
+            data = const_cast<float *>(d);
+        }
+
+        operator std::string() const {
+            std::string result = "[ ";
+            for (const auto &dimension: shape) result += std::to_string(dimension) + " ";
+            result += ']';
+            return result;
+        }
+
+        std::vector<int64_t> shape;
+        float *data;
+    };
+
+    class onnx {
+    public:
+        explicit onnx(const std::string &model);
 
         ~onnx();
 
-        std::vector<const float*> process_image(const image& img);
+        std::vector<output> process_image(const image &img) const;
+
         [[nodiscard]] int yolo26_size() const;
+
         [[nodiscard]] size_i image_size() const;
+
         void show_shapes() const;
+
         static void show_providers();
 
     private:
-        impl::onnx_impl* impl;
+        impl::onnx_impl *impl;
     };
 } // sc

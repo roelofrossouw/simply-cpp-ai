@@ -18,6 +18,8 @@ find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
+config_or_install_package(Tesseract libtesseract-dev tesseract)
+
 set(SIMPLY_CPP_MODEL_DIR "${SC_MODELS_DIR}")
 configure_file(include/config.h.in ${CMAKE_BINARY_DIR}/generated/config.h @ONLY)
 
@@ -44,6 +46,10 @@ add_sc_object(facedetector
 add_sc_object(face
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
+
+add_sc_object(identity
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json PkgConfig::Tesseract
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json PkgConfig::Tesseract)
 
 
 ######################

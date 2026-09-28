@@ -40,10 +40,13 @@ namespace sc {
 
             onnx_impl(const std::string &Model) : model_filename(Model) {
                 if (!fs::exists(model_filename)) {
-                    if (fs::exists(default_model_dir / model_filename))
+                    if (fs::exists(model_filename.string() + ".onnx"))
+                        model_filename += ".onnx";
+                    else if (fs::exists(default_model_dir / model_filename))
                         model_filename = default_model_dir / model_filename;
-                    else
-                        throw std::runtime_error("Model file not found. " + model_filename.string());
+                    else if (fs::exists((default_model_dir / model_filename).string() + ".onnx"))
+                        model_filename = (default_model_dir / model_filename).string() + ".onnx";
+                    else throw std::runtime_error("Model file not found. " + model_filename.string());
                 }
 
 #ifdef __APPLE__
@@ -79,16 +82,23 @@ namespace sc {
 
             ~onnx_impl() { delete session; }
 
-            std::vector<const float *> run(const val &inputTensor) {
+            std::vector<output> run(const val &inputTensor) {
                 results = session->Run(run_options,
                                        input_names.data(),
                                        &inputTensor,
                                        input_names.size(),
                                        output_names.data(),
                                        output_names.size());
-                std::vector<const float *> data;
+                std::vector<output> data;
                 data.reserve(results.size());
-                for (auto &result: results) data.push_back(result.GetTensorData<float>());
+                for (auto &result: results) {
+                    data.emplace_back(result.GetTensorTypeAndShapeInfo().GetShape(), result.GetTensorData<float>());
+                    // auto shape = result.GetTensorTypeAndShapeInfo().GetShape();
+                    // std::cout << "R: " << shape.size() << " [ ";
+                    // for (const auto &s: shape) std::cout << s << " ";
+                    // std::cout << "]\n";
+                    // data.push_back(result.GetTensorData<float>());
+                }
                 return data;
             }
 
@@ -155,7 +165,7 @@ namespace sc {
 
     onnx::~onnx() { delete impl; }
 
-    std::vector<const float *> onnx::process_image(const image &img) {
+    std::vector<output> onnx::process_image(const image &img) const {
         img.generate_blob(1.0 / 255.0, 127.5, true);
         const val input = val::CreateTensor<float>(impl->memInfo,
                                                    img.blob(), img.blob_size(),
