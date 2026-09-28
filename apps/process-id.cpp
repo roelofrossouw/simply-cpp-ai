@@ -21,6 +21,10 @@ int main() {
     for (const auto &file: filesystem::directory_iterator(image_path)) {
         if (!file.is_regular_file()) continue;
         sc::identity id(file, true);
+        if (!id.has_id_number()) {
+            cerr << "Could not find the ID " << file.path().filename() << endl;
+            continue;
+        }
         cout << sw
                 << " " << id.confidence()
                 << " " << id.id_number()
@@ -35,7 +39,7 @@ int main() {
         for (const auto &face: id.faces()) {
             vector<string> parameters{
                 file.path().filename().string(),
-                to_string(facenum),
+                to_string(++facenum),
                 to_string(static_cast<int>(id.confidence())),
                 id.document_type_name(),
                 id.id_number(),
