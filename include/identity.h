@@ -29,7 +29,7 @@ namespace sc {
     ///     if (document.confidence() >= 90) store(document.to_json());
     ///     else queue_for_review(document);
     ///
-    /// Reading is thread safe; each thread builds its own recogniser on first
+    /// Reading is thread safe; each thread builds its own OCR models on first
     /// use, so reading a batch in parallel scales, but sharing one identity
     /// object between threads does not.
     class identity {
@@ -68,7 +68,7 @@ namespace sc {
 
         /// Reads the document in an image. Never throws for an unreadable
         /// document - check has_id_number() - but does throw when the file
-        /// cannot be opened or the OCR engine is unavailable.
+        /// cannot be opened or the OCR models are unavailable.
         explicit identity(const std::filesystem::path &image_path, effort level = effort::thorough);
 
         /// Reads a document, discarding any previous result, and returns
@@ -88,9 +88,8 @@ namespace sc {
         /// Which individual checks agreed.
         [[nodiscard]] const verification &checks() const noexcept;
 
-        /// Mean recogniser confidence for the words the number was read from.
-        /// Unlike confidence() this says nothing about correctness, only about
-        /// how clear the characters were.
+        /// Mean PaddleOCR character confidence for the line containing the
+        /// number. Unlike confidence(), this says nothing about correctness.
         [[nodiscard]] percent ocr_confidence() const;
 
         /// Rotation in degrees that had to be applied to read the document.
@@ -129,13 +128,6 @@ namespace sc {
         /// "M" or "F" as encoded in an identity number, or an empty string when
         /// the number is not valid.
         [[nodiscard]] static std::string id_sex(const std::string &number);
-
-        /// Overrides the tessdata directory. Only needed when the OCR engine
-        /// cannot find its language data on its own.
-        static void set_tessdata_path(const std::filesystem::path &path);
-
-        /// Sets the recognition language, "eng" by default.
-        static void set_language(const std::string &language);
 
     private:
         document document_{document::unknown};

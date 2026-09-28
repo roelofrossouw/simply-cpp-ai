@@ -1,10 +1,11 @@
 #include "identity.h"
+#include "image.h"
+#include "ocr.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
-#include <cstring>
 #include <iostream>
 #include <span>
 #include <stdexcept>
@@ -13,7 +14,6 @@
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <tesseract/baseapi.h>
 
 using namespace std;
 
@@ -408,64 +408,28 @@ namespace sc {
 
         // ------------------------------------------------------------- the OCR
 
-        inline string tessdata_path;
-        inline string language{"eng"};
+        static vector<text_line> recognise(const cv::Mat &grey) {
+            vector<uchar> encoded;
+            if (!cv::imencode(".png", grey, encoded))
+                throw runtime_error{"Could not encode preprocessed image for OCR"};
+            // The image wrapper accepts encoded PNG data, so preprocessing stays in memory.
+            const string png{encoded.begin(), encoded.end()};
+            const image input{png};
 
-        // One engine per thread: initialising it reads the language data from
-        // disk, and the API object is not thread safe.
-        static tesseract::TessBaseAPI &engine() {
-            static thread_local tesseract::TessBaseAPI api;
-            static thread_local bool started = false;
-            if (!started) {
-                const char *data = tessdata_path.empty() ? nullptr : tessdata_path.c_str();
-                if (api.Init(data, language.c_str()) != 0)
-                    throw runtime_error{
-                        "Could not initialise the OCR engine for language '" + language +
-                        "'. Install tesseract and its language data, or call "
-                        "identity::set_tessdata_path()."
-                    };
-                // Photographs carry no resolution, and guessing one produces a
-                // warning per image without improving the result.
-                api.SetVariable("user_defined_dpi", "300");
-                started = true;
-            }
-            return api;
-        }
-
-        static vector<text_line> recognise(const cv::Mat &grey, const tesseract::PageSegMode mode) {
-            auto &api = engine();
-            api.SetPageSegMode(mode);
-            api.SetImage(grey.data, grey.cols, grey.rows, 1, static_cast<int>(grey.step));
-            if (api.Recognize(nullptr) != 0) return {};
+            static thread_local ocr recognizer;
+            recognizer.detect(input);
 
             vector<text_line> lines;
-            const unique_ptr<tesseract::ResultIterator> it{api.GetIterator()};
-            if (!it) return lines;
-
-            double confidence_total = 0;
-            int word_count = 0;
-            do {
-                const unique_ptr<char[]> word{it->GetUTF8Text(tesseract::RIL_WORD)};
-                if (!word) continue;
-                const string text = trim(word.get());
-                if (text.empty()) continue;
-
-                if (lines.empty() || it->IsAtBeginningOf(tesseract::RIL_TEXTLINE)) {
-                    if (!lines.empty() && word_count > 0) lines.back().confidence = confidence_total / word_count;
-                    lines.emplace_back();
-                    confidence_total = 0;
-                    word_count = 0;
-                }
-                if (!lines.back().text.empty()) lines.back().text += ' ';
-                lines.back().text += text;
-                lines.back().packed += text;
-                confidence_total += it->Confidence(tesseract::RIL_WORD);
-                ++word_count;
-            } while (it->Next(tesseract::RIL_WORD));
-
-            if (!lines.empty() && word_count > 0) lines.back().confidence = confidence_total / word_count;
-            for (auto &line: lines) line.alnum = keep_alnum(line.packed);
-            erase_if(lines, [](const text_line &line) { return line.text.empty(); });
+            for (const auto &recognized: recognizer.lines()) {
+                text_line line;
+                line.text = trim(recognized.text);
+                line.packed.reserve(line.text.size());
+                for (const unsigned char c: line.text)
+                    if (!isspace(c)) line.packed += static_cast<char>(c);
+                line.alnum = keep_alnum(line.packed);
+                line.confidence = static_cast<double>(recognized.confidence);
+                if (!line.text.empty()) lines.push_back(std::move(line));
+            }
             return lines;
         }
 
@@ -501,10 +465,6 @@ namespace sc {
                 if (source.empty()) throw runtime_error{"Could not read image: " + image_path.string()};
                 identity best;
 
-                // const auto lines = recognise(source, tesseract::PSM_AUTO);
-                // populate(best, lines);
-                // return best;
-
                 const size_t stages = level == identity::effort::quick ? 1 : STAGES.size();
                 for (const auto [which, enlarge]: span{STAGES}.first(stages)) {
                     for (const int degrees: ROTATIONS) {
@@ -514,24 +474,19 @@ namespace sc {
                         else if (degrees == 270) cv::rotate(source, rotated, cv::ROTATE_90_COUNTERCLOCKWISE);
                         const cv::Mat prepared = prepare(rotated, which, enlarge);
 
-                        // Sparse text suits a document photographed against a
-                        // busy background; a single block is the fallback for a
-                        // page that fills the frame.
-                        for (const auto mode: {tesseract::PSM_SPARSE_TEXT, tesseract::PSM_SINGLE_BLOCK}) {
-                            const auto lines = recognise(prepared, mode);
-                            if (lines.empty()) continue;
-                            identity result;
-                            result.rotation_ = degrees;
-                            populate(result, lines);
-                            if (!result.has_id_number()) {
-                                if (best.document_ == identity::document::unknown)
-                                    best.document_ = result.document_; // keep the type even without a number
-                                continue;
-                            }
-                            // A fully corroborated read cannot be improved on.
-                            if (result.checks_.score() >= 100) return result;
-                            if (result.checks_.score() > best.checks_.score()) best = result;
+                        const auto lines = recognise(prepared);
+                        if (lines.empty()) continue;
+                        identity result;
+                        result.rotation_ = degrees;
+                        populate(result, lines);
+                        if (!result.has_id_number()) {
+                            if (best.document_ == identity::document::unknown)
+                                best.document_ = result.document_; // keep the type even without a number
+                            continue;
                         }
+                        // A fully corroborated read cannot be improved on.
+                        if (result.checks_.score() >= 100) return result;
+                        if (result.checks_.score() > best.checks_.score()) best = result;
                         if (best.has_id_number()) return best; // good enough; stop escalating
                     }
                 }
@@ -775,9 +730,6 @@ namespace sc {
         return stoi(number.substr(6, 4)) >= 5000 ? "M" : "F";
     }
 
-    void identity::set_tessdata_path(const filesystem::path &path) { impl::tessdata_path = path.string(); }
-    void identity::set_language(const string &language) { impl::language = language; }
-
     nlohmann::ordered_json identity::to_json() const {
         nlohmann::ordered_json result{
             {"version", 1},
@@ -808,7 +760,7 @@ namespace sc {
     identity::operator nlohmann::ordered_json() const { return to_json(); }
     identity::operator string() const { return to_json().dump(); }
 
-    ostream &operator<<(ostream &lhs, const identity &rhs) {
+    std::ostream &operator<<(std::ostream &lhs, const identity &rhs) {
         return lhs << static_cast<string>(rhs);
     }
 } // namespace sc

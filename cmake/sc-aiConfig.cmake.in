@@ -6,8 +6,4 @@ find_dependency(onnxruntime)
 find_dependency(nlohmann_json)
 find_dependency(sc-core)
 
-# sc::sc-ai links tesseract for sc::identity; it has no CMake config of its own.
-find_dependency(PkgConfig)
-pkg_check_modules(Tesseract REQUIRED IMPORTED_TARGET tesseract)
-
 include ("${CMAKE_CURRENT_LIST_DIR}/sc-aiTargets.cmake")
