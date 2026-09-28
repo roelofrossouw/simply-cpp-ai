@@ -41,6 +41,10 @@ add_sc_object(facedetector
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
+add_sc_object(face
+        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
+        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
+
 
 ######################
 # Exported Libraries #
@@ -67,6 +71,11 @@ endif ()
 add_executable(sc-ai-demo apps/sc-ai-demo.cpp)
 target_link_libraries(sc-ai-demo PRIVATE sc::sc-ai-shared)
 install(TARGETS sc-ai-demo RUNTIME DESTINATION bin COMPONENT runtime)
+
+find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
+add_executable(load-faces apps/load-faces.cpp)
+target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
+install(TARGETS load-faces RUNTIME DESTINATION bin COMPONENT runtime)
 
 #############
 # Packaging #

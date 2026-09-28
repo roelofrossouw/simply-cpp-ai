@@ -31,53 +31,57 @@ namespace sc {
             }
         };
 
-        struct FaceFeatures {
-            float data[512]{};
-            explicit FaceFeatures(float *f) { memcpy(data, f, sizeof(data)); }
-            FaceFeatures(const FaceFeatures &f) { memcpy(data, f.data, sizeof(data)); }
+        struct layer_info {
+            const int stride;
+            const size_i grid_size;
+
+            layer_info(const int stride, const size_i &image_size)
+                : stride(stride),
+                  grid_size(get_grid_size(stride, image_size)) {
+            }
+
+            [[nodiscard]] int detection_count() const {
+                return grid_size.area() * 2;
+            }
+
+            [[nodiscard]] point cell_center(const int detection_index) const {
+                const int cell_index = detection_index / 2;
+                return {
+                    cell_index % grid_size.width() * stride,
+                    cell_index / grid_size.width() * stride
+                };
+            }
+
+        private:
+            static size_i get_grid_size(const int stride, const size_i &image_size) {
+                if (stride <= 0 || image_size.width() % stride != 0 || image_size.height() % stride != 0)
+                    throw invalid_argument{"Face detector image dimensions must be divisible by the stride"};
+                return {image_size.width() / stride, image_size.height() / stride};
+            }
         };
 
-        struct Detection {
-            int layer = -1;
-            int index = -1;
-            percent score = {0.f, 0};
-            const float *lm = nullptr;
-            int stride = 0;
-            size_i feature_size{0, 0};
+        struct detection {
+            percent score;
+            array<point, 5> landmarks;
             rect box;
 
-            [[nodiscard]] int cell() const { return index / 2; }
-            [[nodiscard]] point center() const { return {cx(), cy()}; }
-            [[nodiscard]] int cx() const { return cell() % feature_size.width() * stride; }
-            [[nodiscard]] int cy() const { return cell() / feature_size.height() * stride; }
-
-            [[nodiscard]] array<point, 5> landmarks() const {
-                array<point, 5> landmarks;
-                for (int i = 0; i < 5; ++i) landmarks[i] = center() + point{lm[i * 2], lm[i * 2 + 1]} * stride;
-                return landmarks;
+            detection(const float confidence, const int index,
+                      const layer_info &layer, const float *box_data,
+                      const float *landmark_data) : score(confidence, 0) {
+                const point center = layer.cell_center(index);
+                const float *box_offsets = box_data + index * 4;
+                box = rect::ltrb(-box_offsets[0], -box_offsets[1], box_offsets[2], box_offsets[3]) *
+                      layer.stride + center;
+                for (size_t i = 0; i < landmarks.size(); ++i) {
+                    landmarks[i] = center + point{
+                                       landmark_data[index * 10 + i * 2],
+                                       landmark_data[index * 10 + i * 2 + 1]
+                                   } * layer.stride;
+                }
             }
 
-            void calc_box(const vector<const float *> &outputs) {
-                const float *c = outputs[3 + layer] + index * 4;
-                box = rect::ltrb(-c[0], -c[1], c[2], c[3]) * stride + center();
-            }
-
-            [[nodiscard]] bool overlaps(const Detection &rhs) const { return box.iou(rhs.box) > 0.2; }
-        };
-
-        struct LayerInfo {
-            int stride{};
-            size_i feature_size{};
-
-            LayerInfo() = default;
-
-            LayerInfo(const int stride, const size_i &size)
-                : stride(stride),
-                  feature_size(size.width() / stride, size.height() / stride) {
-            }
-
-            [[nodiscard]] int count() const {
-                return feature_size.width() * feature_size.height() * 2;
+            [[nodiscard]] bool overlaps(const detection &rhs) const {
+                return box.iou(rhs.box) > 0.2;
             }
         };
 
@@ -92,134 +96,89 @@ namespace sc {
 #endif
             }
 
-            void set_threshold(const float threshold) {
-                threshold_ = threshold;
+            void set_threshold(const float threshold) { threshold_ = threshold; }
+
+            void set_max_faces(const int max_faces) { max_faces_ = max_faces; }
+
+            static image extract_face(const detection &detection, const image &img) {
+                return img.warp(detection.landmarks, ARC_FACE_TEMPLATE, {112, 112});
             }
 
-            void set_max_faces(const int max_faces) {
-                max_faces_ = max_faces;
-            }
-
-            static image extract_face(const Detection &detection, const image &img) {
-                return img.warp(detection.landmarks(), ARC_FACE_TEMPLATE, {112, 112});;
-            }
-
-            static void annotate_face(const Detection &detection, image &img) {
+            static void annotate_face(const detection &detection, image &img) {
                 img.rect(detection.box);
                 const point_i label_position{detection.box.left(), std::max(20, (int) detection.box.top() - 5)};
                 const std::string label = detection.score;
                 img.text(label, label_position);
-                for (const auto &l: detection.landmarks()) img.circle({l.x(), l.y()}, 1);
+                for (const auto &landmark: detection.landmarks) img.circle({landmark.x(), landmark.y()}, 1);
             }
 
-            void process_detections(const vector<const float *> &outputs, const image &img) {
-                vector<LayerInfo> layers;
+            vector<face> process_detections(const vector<const float *> &outputs, const image &img,
+                                            const bool include_face_images) {
+                vector<layer_info> layers;
                 layers.reserve(STRIDES.size());
                 const auto image_size = img.size();
                 for (const int stride_size: STRIDES) layers.emplace_back(stride_size, image_size);
 
-                vector<Detection> candidates;
+                vector<detection> candidates;
                 for (size_t layer = 0; layer < layers.size(); ++layer) {
-                    auto scores = outputs[layer];
-                    for (int index = 0; index < layers[layer].count(); ++index) {
+                    const float *scores = outputs[layer];
+                    for (int index = 0; index < layers[layer].detection_count(); ++index) {
                         if (scores[index] < threshold_) continue;
-                        Detection detection;
-                        detection.layer = static_cast<int>(layer);
-                        detection.index = index;
-                        detection.score = {scores[index], 0};
-                        detection.stride = layers[layer].stride;
-                        detection.feature_size = layers[layer].feature_size;
-                        detection.lm = outputs[6 + layer] + index * 10;
-                        detection.calc_box(outputs);
-                        candidates.push_back(detection);
+                        candidates.emplace_back(scores[index], index, layers[layer],
+                                                outputs[3 + layer],
+                                                outputs[6 + layer]);
                     }
                 }
 
-                ranges::sort(candidates, [](const Detection &lhs, const Detection &rhs) {
+                ranges::sort(candidates, [](const detection &lhs, const detection &rhs) {
                     return lhs.score > rhs.score;
                 });
 
                 for (const auto &candidate: candidates) {
-                    const auto overlaps = ranges::any_of(detections, [&candidate](const Detection &selected_detection) {
+                    const auto overlaps = ranges::any_of(detections, [&candidate](const detection &selected_detection) {
                         return candidate.overlaps(selected_detection);
                     });
                     if (overlaps) continue;
                     detections.push_back(candidate);
                     if (detections.size() == max_faces_) break;
                 }
-                for (const auto &detection: detections) faces.emplace_back(extract_face(detection, img));
+                vector<face> result;
+                result.reserve(detections.size());
+                for (const auto &detection: detections) {
+                    auto aligned_face = extract_face(detection, img);
+                    const auto features = extractor.process_image(aligned_face)[0];
+                    if (include_face_images) result.emplace_back(features, aligned_face);
+                    else result.emplace_back(features);
+                }
+                return result;
             }
 
-            void run(const string &image_filename) {
+            vector<face> run(const string &image_filename, const bool include_face_images) {
                 detections.clear();
-                faces.clear();
-                features.clear();
                 original = make_unique<image>(image_filename);
                 image input{*original};
                 input.snap_to_size(stride, valid_sizes);
                 auto result = detector.process_image(input);
-                process_detections(result, input);
-                if (faces.empty()) return;
-                for (auto &f: faces) {
-                    features.emplace_back(extractor.process_image(f)[0]);
-                }
-            }
-
-            [[nodiscard]] nlohmann::ordered_json json() const {
-                nlohmann::ordered_json result;
-                // for (const auto &detection: detections)
-                //     if (detection.confidence >= threshold_) result.push_back(detection.json());
-                return result;
+                return process_detections(result, input, include_face_images);
             }
 
             [[nodiscard]] image annotated() const {
                 if (!original) throw runtime_error("No image has been detected");
                 image result{*original};
                 result.snap_to_size(stride, valid_sizes);
-                // for (const auto &face: faces) if (!face.show()) break;
                 for (const auto &detection: detections) annotate_face(detection, result);
                 return result;
             }
 
             onnx detector; // Model to locate the face
             onnx extractor; // Model to extract features
-            vector<Detection> detections;
+            vector<detection> detections;
             unique_ptr<image> original;
-            vector<image> faces;
-            vector<face> features;
 
         private:
             float threshold_{0.6f};
             size_t max_faces_{2};
         };
-    }
-
-    face::face(const float *feats) {
-        setFeatures(feats);
-    }
-
-    face::face(const face &copy) {
-        setFeatures(copy.features);
-    }
-
-    void face::setFeatures(const float *feats) {
-        std::memcpy(features, feats, sizeof(features));
-        normalize();
-    }
-
-    percent face::similarity(const face &rhs) const {
-        return {std::inner_product(features, features + 512, rhs.features, 0.0f), 0};
-    }
-
-    percent face::operator^(const face &rhs) const {
-        return similarity(rhs);
-    }
-
-    void face::normalize() {
-        float norm = 0.0f;
-        for (float feature: features) norm += feature * feature;
-        norm = std::sqrt(norm);
-        for (float &feature: features) feature /= norm;
     }
 
     facedetector::facedetector() : impl(new impl::face_impl()) {
@@ -229,11 +188,6 @@ namespace sc {
         delete impl;
     }
 
-    //
-    // std::ostream &operator<<(std::ostream &lhs, const facedetector &rhs) {
-    //     return lhs << rhs.to_json().dump();
-    // }
-
     void facedetector::set_threshold(const double threshold) {
         impl->set_threshold(threshold);
     }
@@ -242,23 +196,11 @@ namespace sc {
         impl->set_max_faces(max_faces);
     }
 
-    void facedetector::detect(const filesystem::path &image_path) const {
-        impl->run(image_path.string());
+    vector<face> facedetector::detect(const filesystem::path &image_path, const bool include_face_images) const {
+        return impl->run(image_path.string(), include_face_images);
     }
 
     bool facedetector::display(const int timeout) const {
         return impl->annotated().show(timeout);
     }
-
-    const vector<image> &facedetector::faces() const {
-        return impl->faces;
-    }
-
-    const vector<face> &facedetector::features() const {
-        return impl->features;
-    }
-
-    // nlohmann::ordered_json facedetector::to_json() const {
-    //     return impl->json();
-    // }
 } // namespace sc
