@@ -20,7 +20,7 @@ namespace {
     int count_readable(const vector<filesystem::path> &images, int &with_number) {
         with_number = 0;
         for (const auto &image: images) {
-            const sc::identity document{image, sc::identity::effort::quick};
+            const sc::identity document{image};
             if (document.has_id_number()) ++with_number;
         }
         return static_cast<int>(images.size());
@@ -86,7 +86,7 @@ int main() {
 
     SECTION("Reading a smart ID card");
     {
-        const sc::identity card{"resource/test/ID-33.jpg", sc::identity::effort::quick};
+        const sc::identity card{"resource/test/ID-33.jpg"};
         CHECK(card.has_id_number());
         CHECK(card.document_type() == sc::identity::document::id_card);
         CHECK(sc::identity::valid_id_number(card.id_number()));
@@ -96,18 +96,30 @@ int main() {
         CHECK(card.citizen().has_value());
     }
 
+    SECTION("Optional face detection");
+    {
+        const sc::identity card{"resource/test/ID-33.jpg", true};
+        CHECK(card.has_id_number());
+        CHECK(!card.faces().empty());
+        CHECK(card.faces().front().features().size() == sc::face::feature_size);
+        CHECK(card.to_json().contains("faces"));
+
+        const sc::identity without_faces{"resource/test/ID-33.jpg"};
+        CHECK(without_faces.faces().empty());
+        CHECK(!without_faces.to_json().contains("faces"));
+    }
+
     SECTION("Reading a rotated document");
     {
-        const sc::identity rotated{"resource/test/d1383 id.jpg", sc::identity::effort::quick};
+        const sc::identity rotated{"resource/test/d1383 id.jpg"};
         CHECK(rotated.has_id_number());
-        CHECK(rotated.rotation() >= 0 && rotated.rotation() < 360);
-        CHECK(rotated.rotation() % 90 == 0);
+        CHECK_EQ(rotated.rotation(), 0);
         CHECK(sc::identity::valid_id_number(rotated.id_number()));
     }
 
     SECTION("Reading a green ID book");
     {
-        const sc::identity book{"resource/test/D1385 ID.jpg", sc::identity::effort::quick};
+        const sc::identity book{"resource/test/D1385 ID.jpg"};
         CHECK(book.has_id_number());
         CHECK(book.document_type() == sc::identity::document::id_book);
         CHECK(sc::identity::valid_id_number(book.id_number()));
@@ -115,7 +127,7 @@ int main() {
 
     SECTION("JSON output");
     {
-        const sc::identity document{"resource/test/PASPOORT-1.jpg", sc::identity::effort::quick};
+        const sc::identity document{"resource/test/PASPOORT-1.jpg"};
         const auto json = document.to_json();
         CHECK_EQ(json["version"].get<int>(), 1);
         CHECK_EQ(json["document_type"].get<string>(), string{"passport"});

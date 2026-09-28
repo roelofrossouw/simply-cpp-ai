@@ -77,18 +77,18 @@ endif ()
 ############
 # Binaries #
 ############
+find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
 
 add_executable(sc-ai-demo apps/sc-ai-demo.cpp)
 target_link_libraries(sc-ai-demo PRIVATE sc::sc-ai-shared)
 install(TARGETS sc-ai-demo RUNTIME DESTINATION bin COMPONENT runtime)
 
-find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
 add_executable(load-faces apps/load-faces.cpp)
 target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
 install(TARGETS load-faces RUNTIME DESTINATION bin COMPONENT runtime)
 
 add_executable(process-id apps/process-id.cpp)
-target_link_libraries(process-id PRIVATE sc::sc-ai)
+target_link_libraries(process-id PRIVATE sc::sc-ai sc::sc-db)
 install(TARGETS process-id RUNTIME DESTINATION bin COMPONENT runtime)
 
 #############

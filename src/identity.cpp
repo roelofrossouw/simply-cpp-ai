@@ -1,5 +1,5 @@
 #include "identity.h"
-#include "image.h"
+#include "facedetector.h"
 #include "ocr.h"
 
 #include <algorithm>
@@ -7,13 +7,9 @@
 #include <cctype>
 #include <chrono>
 #include <iostream>
-#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
-
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
 
 using namespace std;
 
@@ -338,86 +334,10 @@ namespace sc {
             });
         }
 
-        // ------------------------------------------------------- preprocessing
-
-        enum class variant { plain, red, red_contrast, grey_contrast, adaptive };
-
-        // One rung of the escalation ladder. The plain image at its own
-        // resolution reads most photographs, so it is tried first and nothing
-        // more expensive runs unless it fails.
-        struct stage {
-            variant which;
-            bool enlarge;
-        };
-
-        // Ordered by how often each treatment was the one that worked over the
-        // sample set, so the ladder is climbed in the most productive order.
-        static constexpr array STAGES = {
-            stage{variant::plain, false},
-            stage{variant::plain, true},
-            stage{variant::red_contrast, true},
-            stage{variant::adaptive, true},
-            stage{variant::grey_contrast, true},
-            stage{variant::red, true},
-        };
-        static constexpr array ROTATIONS = {0, 90, 180, 270};
-        static constexpr int MINIMUM_WIDTH = 2200;
-
-        // Green ink on a green guilloche defeats a global threshold, which is
-        // how most of these documents are printed. The red channel turns green
-        // ink dark while leaving black text black, and local contrast recovers
-        // the rest.
-        static cv::Mat prepare(const cv::Mat &source, const variant which, const bool enlarge) {
-            cv::Mat grey;
-            switch (which) {
-                case variant::plain:
-                    cv::cvtColor(source, grey, cv::COLOR_BGR2GRAY);
-                    break;
-                case variant::red:
-                    cv::extractChannel(source, grey, 2);
-                    break;
-                case variant::red_contrast:
-                case variant::adaptive: {
-                    cv::Mat red;
-                    cv::extractChannel(source, red, 2);
-                    cv::createCLAHE(3.0, {8, 8})->apply(red, grey);
-                    if (which == variant::adaptive) {
-                        cv::Mat binary;
-                        cv::adaptiveThreshold(grey, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                                              cv::THRESH_BINARY, 51, 12);
-                        grey = binary;
-                    }
-                    break;
-                }
-                case variant::grey_contrast: {
-                    cv::Mat plain;
-                    cv::cvtColor(source, plain, cv::COLOR_BGR2GRAY);
-                    cv::createCLAHE(3.0, {8, 8})->apply(plain, grey);
-                    break;
-                }
-            }
-
-            // Enlarging helps when the document is small in the frame, but it
-            // costs recognition time on every pass, so it waits for escalation.
-            if (enlarge && grey.cols < MINIMUM_WIDTH) {
-                const double scale = static_cast<double>(MINIMUM_WIDTH) / grey.cols;
-                cv::resize(grey, grey, {}, scale, scale, cv::INTER_CUBIC);
-            }
-            return grey;
-        }
-
         // ------------------------------------------------------------- the OCR
-
-        static vector<text_line> recognise(const cv::Mat &grey) {
-            vector<uchar> encoded;
-            if (!cv::imencode(".png", grey, encoded))
-                throw runtime_error{"Could not encode preprocessed image for OCR"};
-            // The image wrapper accepts encoded PNG data, so preprocessing stays in memory.
-            const string png{encoded.begin(), encoded.end()};
-            const image input{png};
-
+        static vector<text_line> recognise(const filesystem::path &image_path) {
             static thread_local ocr recognizer;
-            recognizer.detect(input);
+            recognizer.detect(image_path);
 
             vector<text_line> lines;
             for (const auto &recognized: recognizer.lines()) {
@@ -457,39 +377,16 @@ namespace sc {
 
         class identity_reader {
         public:
-            // Tries the cheapest reading first and escalates: the plain image
-            // the right way up succeeds for most photographs, and only what
-            // fails goes on to be rotated and re-contrasted.
-            static identity read(const filesystem::path &image_path, const identity::effort level) {
-                const cv::Mat source = cv::imread(image_path.string(), cv::IMREAD_COLOR);
-                if (source.empty()) throw runtime_error{"Could not read image: " + image_path.string()};
+            static identity read(const filesystem::path &image_path, const bool face_detection) {
                 identity best;
+                best.face_detection_performed_ = face_detection;
 
-                const size_t stages = level == identity::effort::quick ? 1 : STAGES.size();
-                for (const auto [which, enlarge]: span{STAGES}.first(stages)) {
-                    for (const int degrees: ROTATIONS) {
-                        cv::Mat rotated = source;
-                        if (degrees == 90) cv::rotate(source, rotated, cv::ROTATE_90_CLOCKWISE);
-                        else if (degrees == 180) cv::rotate(source, rotated, cv::ROTATE_180);
-                        else if (degrees == 270) cv::rotate(source, rotated, cv::ROTATE_90_COUNTERCLOCKWISE);
-                        const cv::Mat prepared = prepare(rotated, which, enlarge);
-
-                        const auto lines = recognise(prepared);
-                        if (lines.empty()) continue;
-                        identity result;
-                        result.rotation_ = degrees;
-                        populate(result, lines);
-                        if (!result.has_id_number()) {
-                            if (best.document_ == identity::document::unknown)
-                                best.document_ = result.document_; // keep the type even without a number
-                            continue;
-                        }
-                        // A fully corroborated read cannot be improved on.
-                        if (result.checks_.score() >= 100) return result;
-                        if (result.checks_.score() > best.checks_.score()) best = result;
-                        if (best.has_id_number()) return best; // good enough; stop escalating
-                    }
+                if (face_detection) {
+                    static thread_local facedetector detector;
+                    best.faces_ = detector.detect(image_path, false);
                 }
+
+                populate(best, recognise(image_path));
                 return best;
             }
 
@@ -669,12 +566,12 @@ namespace sc {
         };
     }
 
-    identity::identity(const filesystem::path &image_path, const effort level) {
-        read(image_path, level);
+    identity::identity(const filesystem::path &image_path, const bool face_detection) {
+        read(image_path, face_detection);
     }
 
-    bool identity::read(const filesystem::path &image_path, const effort level) {
-        *this = impl::identity_reader::read(image_path, level);
+    bool identity::read(const filesystem::path &image_path, const bool face_detection) {
+        *this = impl::identity_reader::read(image_path, face_detection);
         return has_id_number();
     }
 
@@ -694,6 +591,7 @@ namespace sc {
     percent identity::confidence() const { return {static_cast<double>(checks_.score()), 0}; }
     const identity::verification &identity::checks() const noexcept { return checks_; }
     percent identity::ocr_confidence() const { return {ocr_confidence_, 1}; }
+    const vector<face> &identity::faces() const noexcept { return faces_; }
     int identity::rotation() const noexcept { return rotation_; }
     const string &identity::surname() const noexcept { return surname_; }
     const string &identity::names() const noexcept { return names_; }
@@ -753,6 +651,10 @@ namespace sc {
         add("date_of_issue", date_of_issue_);
         add("date_of_expiry", date_of_expiry_);
         if (has_id_number()) result["ocr_confidence"] = static_cast<double>(ocr_confidence());
+        if (face_detection_performed_) {
+            result["faces"] = nlohmann::ordered_json::array();
+            for (const auto &detected_face: faces_) result["faces"].push_back(detected_face.to_json());
+        }
         result["rotation"] = rotation_;
         return result;
     }

@@ -99,7 +99,16 @@ std::cout << reader.to_json().dump(2) << std::endl;
 
 Use the optional constructor arguments to select detection and recognition models, and an optional third path for a custom recognition dictionary. `reader.lines()` returns the recognised line records directly; `reader.display()` shows the source image with text boxes.
 
-`sc::identity` uses the same PaddleOCR engine and bundled English models for its document reads, so Tesseract is no longer required. Identity recognition remains English-only; the former Tesseract tessdata and language overrides are not applicable.
+`sc::identity` passes the original image to the same PaddleOCR engine and bundled English models, then parses its output for document fields. It does not add preprocessing or retries. Tesseract is no longer required; identity recognition remains English-only.
+
+Pass `true` as the second argument to also detect face embeddings from the original image. The embeddings are available through `faces()` and are included in JSON only when face detection was requested:
+
+```cpp
+sc::identity document{"id.jpg", true};
+for (const auto &detected_face: document.faces()) {
+    save_for_matching(detected_face.to_json());
+}
+```
 
 ### Face detection and reusable face data
 
