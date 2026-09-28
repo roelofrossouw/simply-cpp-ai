@@ -86,6 +86,26 @@ int main() {
 
 `sc::onnx` (`<onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
 
+### Face detection and reusable face data
+
+`sc::facedetector` returns detected faces as `std::vector<sc::face>`. Each `sc::face` owns normalized 512-value features and can optionally retain its aligned face image:
+
+```cpp
+#include <facedetector.h>
+
+sc::facedetector detector;
+const auto faces = detector.detect("photo.jpg"); // Keep aligned face images (default)
+const auto embeddings = detector.detect("photo.jpg", false); // Feature-only faces
+
+if (!embeddings.empty()) {
+    const nlohmann::ordered_json json = embeddings.front().to_json();
+    embeddings.front().save("face.json");
+    const auto loaded = sc::face::load("face.json");
+}
+```
+
+Face JSON and file persistence store only the feature vector; the optional image is transient and omitted. This keeps serialized records lightweight and suitable for a database. `face::from_json()` and `face::load()` restore feature-only faces. Similarity is available through `similarity()` or `operator^`.
+
 ## Requirements
 
 - CMake 3.22 or newer

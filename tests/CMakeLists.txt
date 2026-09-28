@@ -9,6 +9,8 @@ add_custom_target(copy_sc_ai_resources ALL COMMAND ${CMAKE_COMMAND} -E copy_dire
 set(SC_TEST_LINK_LIBRARIES sc-ai)
 
 add_sc_test(yolo TIMEOUT 120)
-add_dependencies(test-yolo copy_sc_ai_resources)
-add_sc_test(face TIMEOUT 120)
-add_dependencies(test-face copy_sc_ai_resources)
+add_dependencies(copy_sc_ai_resources)
+add_sc_test(facedet TIMEOUT 120)
+add_dependencies(copy_sc_ai_resources)
+add_sc_test(face)
+add_dependencies(copy_sc_ai_resources)
