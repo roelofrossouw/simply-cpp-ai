@@ -146,7 +146,7 @@ namespace sc {
                 result.reserve(detections.size());
                 for (const auto &detection: detections) {
                     auto aligned_face = extract_face(detection, img);
-                    const auto features = extractor.process_image(aligned_face)[0];
+                    const auto features = extractor.process_image(aligned_face)[0].data;
                     if (include_face_images) result.emplace_back(features, aligned_face);
                     else result.emplace_back(features);
                 }
@@ -158,7 +158,9 @@ namespace sc {
                 original = make_unique<image>(image_filename);
                 image input{*original};
                 input.snap_to_size(stride, valid_sizes);
-                auto result = detector.process_image(input);
+                auto out = detector.process_image(input);
+                vector<const float *> result;
+                for (const auto &o: out) result.push_back(o.data);
                 return process_detections(result, input, include_face_images);
             }
 

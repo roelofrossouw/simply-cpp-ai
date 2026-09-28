@@ -4,6 +4,8 @@
 
 using namespace std;
 
+const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/"};
+
 /*
 -- select * from truckassist.facedata
 -- create table truckassist.detection (id serial, embedding vector(512));
@@ -13,14 +15,20 @@ select * from truckassist.detection limit 10;
 */
 
 int main(int argc, char **argv) {
-    string query{"insert into truckassist.detection(embedding) values ($1)"};
-    filesystem::path file{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/d1333 id.jpg"};
-    sc::facedetector fd;
-    sc::postgres dev("devdb", "1web", "www");
-    auto faces = fd.detect(file);
-    for (auto &face: faces) {
-        auto feats_string = face.to_json()["features"].dump();
-        auto r = dev.exec(query, {feats_string});
+    string query{"insert into truckassist.detection(file, number, embedding) values ($1, $2, $3)"};
+    // const filesystem::path file{image_path / "d1333 id.jpg"};
+    const sc::facedetector fd;
+    const sc::postgres dev("devdb", "1web", "www");
+    for (const auto &file: filesystem::directory_iterator(image_path)) {
+        if (!file.is_regular_file()) continue;
+        auto faces = fd.detect(file);
+        cout << "Running file " << file.path().filename() << " (" << faces.size() << " faces)\n";
+        int imgno = 1;
+        for (auto &face: faces) {
+            const auto feats_string = face.to_json()["features"].dump();
+            const vector parameters{file.path().filename().string(), to_string(imgno++), feats_string};
+            auto r = dev.exec(query, parameters);
+        }
     }
     return 0;
 }

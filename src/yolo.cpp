@@ -66,8 +66,8 @@ namespace sc {
                 image input{*original};
                 if (const auto model_size = detector.image_size(); model_size.width() > 0 && model_size.height() > 0)
                     input.snap_to_size(0, {model_size});
-                const auto data = detector.process_image(input).front();
-                for (int i = 0; i < detector.yolo26_size(); ++i) detections.emplace_back(data + i * 6, input);
+                const auto output = detector.process_image(input).front();
+                for (int i = 0; i < detector.yolo26_size(); ++i) detections.emplace_back(output.data + i * 6, input);
             }
 
             [[nodiscard]] nlohmann::ordered_json json() const {
