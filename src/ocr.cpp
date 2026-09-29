@@ -212,6 +212,7 @@ namespace sc {
                 const auto &output = outputs.front();
                 const auto timesteps = static_cast<int>(output.shape[1]);
                 const auto classes = static_cast<int>(output.shape[2]);
+                const auto character_size = characters.size();
                 if (static_cast<size_t>(classes) > characters.size())
                     throw std::runtime_error{
                         "OCR dictionary has " + std::to_string(characters.size()) +
@@ -225,7 +226,7 @@ namespace sc {
                     const auto *scores = output.data + timestep * classes;
                     int best_class{};
                     float best_score = scores[0];
-                    for (int class_index = 1; class_index < classes; ++class_index) {
+                    for (int class_index = 1; class_index < character_size; ++class_index) {
                         if (scores[class_index] > best_score) {
                             best_score = scores[class_index];
                             best_class = class_index;

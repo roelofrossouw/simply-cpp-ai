@@ -1,5 +1,6 @@
 #include "identity.h"
 #include "facedetector.h"
+#include "image.h"
 #include "ocr.h"
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <cctype>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -24,6 +26,7 @@ namespace sc {
             string packed; // words joined with nothing
             string alnum; // packed, uppercased, punctuation removed
             double confidence{}; // mean word confidence, 0-100
+            rect box;
         };
 
         // ---------------------------------------------------------------- text
@@ -302,30 +305,82 @@ namespace sc {
             return {};
         }
 
+        static bool separator_after_alnum(const string &text, const size_t alnum_count) {
+            size_t seen = 0;
+            for (size_t i = 0; i < text.size(); ++i) {
+                if (!isalnum(static_cast<unsigned char>(text[i]))) continue;
+                if (++seen == alnum_count)
+                    return i + 1 == text.size() || !isalnum(static_cast<unsigned char>(text[i + 1]));
+            }
+            return false;
+        }
+
         // Returns the value belonging to a label. Labels are matched on a
         // punctuation-free uppercase form because the small low-contrast
         // captions on these documents recognise poorly.
         static string value_for_label(const vector<text_line> &lines,
                                       const initializer_list<string_view> keys) {
+            static constexpr array<string_view, 24> CAPTIONS = {
+                "SURNAME", "VANSURNAME", "GIVENNAMES", "FORENAMES", "NAMES", "VOORNAME", "PRENOMS", "NOM",
+                "NATIONALIT", "COUNTRYOFBIRTH", "PLACEOFBIRTH", "GEBOORTEDISTRIK", "STATUS", "DATEISSUED",
+                "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFEXPIRY", "DATEEXPIRES", "PASSPORTNO", "IDENTITYNUMBER",
+                "IDENTITYNO", "IDNO", "SEX", "GESLAG"
+            };
+            const auto is_caption = [](const string &value) {
+                return ranges::any_of(CAPTIONS, [&value](const string_view caption) {
+                    return value.find(caption) != string::npos;
+                });
+            };
+            const text_line *best_value = nullptr;
+            double best_score = numeric_limits<double>::infinity();
+
             for (size_t i = 0; i < lines.size(); ++i) {
                 for (const auto key: keys) {
                     const auto at = lines[i].alnum.find(key);
                     if (at == string::npos) continue;
 
-                    // A value shares its label's line only where digits follow
-                    // the label, as in an ID book's "I.D.No. 791130 5089 08 9".
-                    // Captions elsewhere are bilingual - "Surname / Nom" - so a
-                    // remainder without digits is the second language, not the
-                    // value, and the value is on the line below.
-                    const string remainder = lines[i].alnum.substr(at + key.size());
-                    if (ranges::any_of(remainder, [](const unsigned char c) { return isdigit(c); })) {
-                        const string tail = trim(tail_after(lines[i].text, at + key.size()));
-                        if (!tail.empty()) return tail;
+                    const string tail = trim(tail_after(lines[i].text, at + key.size()));
+                    if (separator_after_alnum(lines[i].text, at + key.size()) &&
+                        !tail.empty() && !is_caption(keep_alnum(tail)))
+                        return tail;
+
+                    const auto &label = lines[i].box;
+                    const double label_center_y = label.top() + label.height() / 2;
+                    const double same_row_tolerance = std::max(4.0, label.height() * 0.5);
+                    const double max_horizontal_gap = std::max(label.height() * 4.0, label.width() * 1.5);
+                    const double max_vertical_gap = std::max(label.height() * 6.0, label.width() * 1.5);
+
+                    for (size_t j = 0; j < lines.size(); ++j) {
+                        if (j == i || lines[j].text.empty() || is_caption(lines[j].alnum)) continue;
+
+                        const auto &candidate = lines[j];
+                        const auto &box = candidate.box;
+                        const double horizontal_gap = std::max({
+                            0.0, label.left() - box.right(), box.left() - label.right()
+                        });
+                        if (horizontal_gap > max_horizontal_gap) continue;
+
+                        const double candidate_center_y = box.top() + box.height() / 2;
+                        const double center_y_gap = std::abs(candidate_center_y - label_center_y);
+                        const bool same_row = box.left() >= label.left() &&
+                                              center_y_gap <= same_row_tolerance;
+                        double score{};
+                        if (same_row) {
+                            score = horizontal_gap + center_y_gap * 2.0;
+                        } else {
+                            if (box.top() < label.top()) continue;
+                            const double vertical_gap = std::max(0.0, box.top() - label.bottom());
+                            if (vertical_gap > max_vertical_gap) continue;
+                            score = vertical_gap + horizontal_gap * 0.5;
+                        }
+                        if (score < best_score) {
+                            best_score = score;
+                            best_value = &candidate;
+                        }
                     }
-                    if (i + 1 < lines.size() && !trim(lines[i + 1].text).empty()) return trim(lines[i + 1].text);
                 }
             }
-            return {};
+            return best_value ? trim(best_value->text) : string{};
         }
 
         static bool any_line_contains(const vector<text_line> &lines, const string_view needle) {
@@ -335,12 +390,14 @@ namespace sc {
         }
 
         // ------------------------------------------------------------- the OCR
-        static vector<text_line> recognise(const filesystem::path &image_path) {
-            static thread_local ocr recognizer;
-            recognizer.detect(image_path);
+        static ocr &recognizer() {
+            static thread_local ocr instance;
+            return instance;
+        }
 
+        static vector<text_line> make_text_lines(const vector<ocr::line> &recognized_lines) {
             vector<text_line> lines;
-            for (const auto &recognized: recognizer.lines()) {
+            for (const auto &recognized: recognized_lines) {
                 text_line line;
                 line.text = trim(recognized.text);
                 line.packed.reserve(line.text.size());
@@ -348,9 +405,22 @@ namespace sc {
                     if (!isspace(c)) line.packed += static_cast<char>(c);
                 line.alnum = keep_alnum(line.packed);
                 line.confidence = static_cast<double>(recognized.confidence);
+                line.box = recognized.box;
                 if (!line.text.empty()) lines.push_back(std::move(line));
             }
             return lines;
+        }
+
+        static vector<text_line> recognise(const filesystem::path &image_path) {
+            auto &reader = recognizer();
+            reader.detect(image_path);
+            return make_text_lines(reader.lines());
+        }
+
+        static vector<text_line> recognise(const image &input) {
+            auto &reader = recognizer();
+            reader.detect(input);
+            return make_text_lines(reader.lines());
         }
 
         // ------------------------------------------------------------ assembly
@@ -387,6 +457,18 @@ namespace sc {
                 }
 
                 populate(best, recognise(image_path));
+                if (best.has_id_number()) return best;
+
+                image upside_down{image_path.string()};
+                upside_down.rotate(180);
+                identity rotated;
+                populate(rotated, recognise(upside_down));
+                if (rotated.has_id_number()) {
+                    rotated.rotation_ = 180;
+                    rotated.faces_ = std::move(best.faces_);
+                    rotated.face_detection_performed_ = face_detection;
+                    return rotated;
+                }
                 return best;
             }
 
