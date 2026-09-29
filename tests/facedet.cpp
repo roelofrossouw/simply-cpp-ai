@@ -18,10 +18,17 @@ int main() {
     fd.set_max_faces(MaxFaces);
     vector<pair<string, sc::face> > feats;
 
+    bool tested_image_input = false;
     for (const auto &img_file: fs::directory_iterator("resource/test/")) {
         if (!img_file.is_regular_file()) continue;
         if (!counter--) break;
         sc::timer sw2;
+        if (!tested_image_input) {
+            const sc::image input{img_file.path().string()};
+            const auto in_memory_faces = fd.detect(input);
+            if (in_memory_faces.size() > MaxFaces) return 1;
+            tested_image_input = true;
+        }
         auto detected_faces = fd.detect(img_file.path());
         if (!detected_faces.empty()) feats.emplace_back(img_file.path().filename(), detected_faces.front());
         // if (!fd.display()) break; // Show annotated face.

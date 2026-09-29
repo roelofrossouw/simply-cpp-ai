@@ -71,6 +71,11 @@ namespace sc {
 #endif
                 options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
 
+#ifndef NDEBUG
+                sc::timer sw;
+                std::cerr << "Loading model " << model_filename << std::endl;
+#endif
+
                 session = new Ort::Session(env, model_filename.string().c_str(), options);
                 for (const auto &val: session->GetInputs())
                     inputs.emplace_back(val.GetName().c_str(), val.TypeInfo().GetTensorTypeAndShapeInfo().GetShape());
@@ -78,11 +83,17 @@ namespace sc {
                     outputs.emplace_back(val.GetName().c_str(), val.TypeInfo().GetTensorTypeAndShapeInfo().GetShape());
                 for (const auto &key: inputs) input_names.push_back(key.first.c_str());
                 for (const auto &key: outputs) output_names.push_back(key.first.c_str());
+#ifndef NDEBUG
+                std::cerr << "Loaded in " << sw << std::endl;
+#endif
             }
 
             ~onnx_impl() { delete session; }
 
             std::vector<output> run(const val &inputTensor) {
+#ifndef NDEBUG
+                sc::timer sw;
+#endif
                 results = session->Run(run_options,
                                        input_names.data(),
                                        &inputTensor,
@@ -91,15 +102,69 @@ namespace sc {
                                        output_names.size());
                 std::vector<output> data;
                 data.reserve(results.size());
-                for (auto &result: results) {
+                for (auto &result: results)
                     data.emplace_back(result.GetTensorTypeAndShapeInfo().GetShape(), result.GetTensorData<float>());
-                    // auto shape = result.GetTensorTypeAndShapeInfo().GetShape();
-                    // std::cout << "R: " << shape.size() << " [ ";
-                    // for (const auto &s: shape) std::cout << s << " ";
-                    // std::cout << "]\n";
-                    // data.push_back(result.GetTensorData<float>());
-                }
+#ifndef NDEBUG
+                std::cerr << "Inference " << model_filename << " - " << sw << std::endl;
+#endif
+
                 return data;
+            }
+
+            std::vector<output> run_images(const std::vector<image> &images) {
+                if (images.empty()) return {};
+                if (inputs.size() != 1 || inputs.front().second.size() != 4 ||
+                    inputs.front().second[1] != 3)
+                    throw std::runtime_error{"Batched image inference requires one NCHW RGB model input"};
+
+                const auto &model_shape = inputs.front().second;
+                const auto model_batch = model_shape[0];
+                if (model_batch > 0 && static_cast<size_t>(model_batch) != images.size())
+                    throw std::invalid_argument{"Image batch size does not match the model's fixed batch dimension"};
+
+                int height = model_shape[2] > 0 ? static_cast<int>(model_shape[2]) : 0;
+                int width = model_shape[3] > 0 ? static_cast<int>(model_shape[3]) : 0;
+                for (const auto &img: images) {
+                    if (img.empty()) throw std::invalid_argument{"Image batch cannot contain empty images"};
+                    img.generate_blob(1.0 / 255.0, 127.5, true);
+                    if (img.blob_shape_size() != 4 || img.blob_shape()[0] != 1 || img.blob_shape()[1] != 3)
+                        throw std::invalid_argument{"Image blobs must have shape [1, 3, height, width]"};
+                    const int image_height = static_cast<int>(img.blob_shape()[2]);
+                    const int image_width = static_cast<int>(img.blob_shape()[3]);
+                    if (model_shape[2] > 0 && image_height != model_shape[2])
+                        throw std::invalid_argument{"Image height does not match the model's fixed input height"};
+                    if (model_shape[3] > 0 && image_width > model_shape[3])
+                        throw std::invalid_argument{"Image width exceeds the model's fixed input width"};
+                    height = std::max(height, image_height);
+                    width = std::max(width, image_width);
+                }
+
+                const std::vector<int64_t> shape{
+                    model_batch > 0 ? model_batch : static_cast<int64_t>(images.size()),
+                    3,
+                    height,
+                    width
+                };
+                const auto batch = static_cast<size_t>(shape[0]);
+                const auto plane_size = static_cast<size_t>(height) * width;
+                std::vector<float> batch_data(batch * 3 * plane_size, 0.0f);
+                for (size_t image_index = 0; image_index < images.size(); ++image_index) {
+                    const auto &img = images[image_index];
+                    const int source_height = static_cast<int>(img.blob_shape()[2]);
+                    const int source_width = static_cast<int>(img.blob_shape()[3]);
+                    const auto *source = img.blob();
+                    for (size_t channel = 0; channel < 3; ++channel) {
+                        const auto *source_plane = source + channel * source_height * source_width;
+                        auto *target_plane = batch_data.data() + (image_index * 3 + channel) * plane_size;
+                        for (int row = 0; row < source_height; ++row)
+                            std::copy_n(source_plane + row * source_width, source_width,
+                                        target_plane + row * width);
+                    }
+                }
+
+                const val input_tensor = val::CreateTensor<float>(
+                    memInfo, batch_data.data(), batch_data.size(), shape.data(), shape.size());
+                return run(input_tensor);
             }
 
             void show_shapes() {
@@ -171,6 +236,10 @@ namespace sc {
                                                    img.blob(), img.blob_size(),
                                                    img.blob_shape(), img.blob_shape_size());
         return impl->run(input);
+    }
+
+    std::vector<output> onnx::process_images(const std::vector<image> &images) const {
+        return impl->run_images(images);
     }
 
     int onnx::yolo26_size() const {

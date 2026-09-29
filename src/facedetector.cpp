@@ -154,8 +154,14 @@ namespace sc {
             }
 
             vector<face> run(const string &image_filename, const bool include_face_images) {
+                const image input{image_filename};
+                return run(input, include_face_images);
+            }
+
+            vector<face> run(const image &source, const bool include_face_images) {
                 detections.clear();
-                original = make_unique<image>(image_filename);
+                if (source.empty()) throw invalid_argument{"Cannot detect faces in an empty image"};
+                original = make_unique<image>(source);
                 image input{*original};
                 input.snap_to_size(stride, valid_sizes);
                 auto out = detector.process_image(input);
@@ -200,6 +206,10 @@ namespace sc {
 
     vector<face> facedetector::detect(const filesystem::path &image_path, const bool include_face_images) const {
         return impl->run(image_path.string(), include_face_images);
+    }
+
+    vector<face> facedetector::detect(const image &input, const bool include_face_images) const {
+        return impl->run(input, include_face_images);
     }
 
     bool facedetector::display(const int timeout) const {

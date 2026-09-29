@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <ostream>
@@ -23,8 +24,8 @@ namespace sc {
             rect box;
         };
 
-        explicit ocr(const std::string &detection_model = "paddle_det_s",
-                      const std::string &recognition_model = "paddle_rec_s",
+        explicit ocr(const std::string &detection_model = "paddle_det_monkt_5",
+                      const std::string &recognition_model = "paddle_rec_monkt_latin",
                       const std::filesystem::path &dictionary = {});
 
         ~ocr();
@@ -38,9 +39,17 @@ namespace sc {
         /// Sets the text-map threshold as a percentage from 0 to 100.
         void set_threshold(double threshold);
 
-        void detect(const std::filesystem::path &image_path) const;
+        /// Sets DBSCAN's minimum neighbor count for angle and height clusters.
+        void set_minimum_neighbors(std::size_t minimum_neighbors);
 
-        void detect(const image &input) const;
+        /// Sets DBSCAN's maximum height distance in detector-map pixels.
+        void set_maximum_height_difference(double maximum_height_difference);
+
+        /// Detects text with at least this recognition confidence, as a percentage from 0 to 100.
+        void detect(const std::filesystem::path &image_path, double minimum_confidence = 0) const;
+
+        /// Detects text with at least this recognition confidence, as a percentage from 0 to 100.
+        void detect(const image &input, double minimum_confidence = 0) const;
 
         [[nodiscard]] const std::vector<line> &lines() const;
 

@@ -4,6 +4,8 @@
 #include "face.h"
 
 namespace sc {
+    class image;
+
     namespace impl {
         class face_impl;
     }
@@ -22,6 +24,8 @@ namespace sc {
 
         [[nodiscard]] std::vector<face> detect(const std::filesystem::path &image_path,
                                                 bool include_face_images = true) const;
+
+        [[nodiscard]] std::vector<face> detect(const image &input, bool include_face_images = true) const;
 
         [[nodiscard]] bool display(int timeout = 0) const;
 

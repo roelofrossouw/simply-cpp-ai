@@ -88,7 +88,8 @@ int main() {
 
     SECTION("Reading a smart ID card");
     {
-        const sc::identity card{"resource/test/ID-33.jpg"};
+        const sc::image input{"resource/test/ID-33.jpg"};
+        const sc::identity card{input};
         CHECK(card.has_id_number());
         CHECK(card.document_type() == sc::identity::document::id_card);
         CHECK(sc::identity::valid_id_number(card.id_number()));
@@ -103,15 +104,25 @@ int main() {
         CHECK(card.citizen().has_value());
     }
 
+    SECTION("Reading names from a green ID book");
+    {
+        const sc::identity book{"resource/test/ID-38.jpg"};
+        CHECK(book.has_id_number());
+        CHECK_EQ(book.surname(), string{"MOHLALA"});
+        CHECK_EQ(book.names(), string{"PALEDI DON"});
+    }
+
     SECTION("Optional face detection");
     {
-        const sc::identity card{"resource/test/ID-33.jpg", true};
+        const sc::image input{"resource/test/ID-33.jpg"};
+        const sc::identity card{input, true};
         CHECK(card.has_id_number());
         CHECK(!card.faces().empty());
         CHECK(card.faces().front().features().size() == sc::face::feature_size);
         CHECK(card.to_json().contains("faces"));
 
-        const sc::identity without_faces{"resource/test/ID-33.jpg"};
+        sc::identity without_faces;
+        CHECK(without_faces.read(input));
         CHECK(without_faces.faces().empty());
         CHECK(!without_faces.to_json().contains("faces"));
     }
@@ -122,6 +133,16 @@ int main() {
         CHECK(rotated.has_id_number());
         CHECK_EQ(rotated.rotation(), 0);
         CHECK(sc::identity::valid_id_number(rotated.id_number()));
+    }
+
+    SECTION("Retrying a sideways document");
+    {
+        const sc::identity rotated{"resource/test/d1333 id.jpg"};
+        CHECK(rotated.has_id_number());
+        CHECK(sc::identity::valid_id_number(rotated.id_number()));
+        CHECK_EQ(rotated.rotation(), 90);
+        CHECK_EQ(rotated.surname(), string{"SELEPE"});
+        CHECK_EQ(rotated.names(), string{"JONAS NALANE"});
     }
 
     SECTION("Retrying an upside-down document");

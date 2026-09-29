@@ -11,6 +11,8 @@
 #include <nlohmann/json.hpp>
 
 namespace sc {
+    class image;
+
     namespace impl {
         class identity_reader;
     }
@@ -57,16 +59,18 @@ namespace sc {
         /// An empty result; document_type() is unknown and no fields are set.
         identity() = default;
 
-        /// Reads the document in an image. Never throws for an unreadable
-        /// document - check has_id_number() - but does throw when the file
-        /// cannot be opened or the OCR models are unavailable.
+        /// Reads the document from a file or in-memory image. Never throws for
+        /// an unreadable document - check has_id_number() - but does throw when
+        /// the file cannot be opened, the image is empty, or OCR models are unavailable.
         /// Set face_detection to also detect embeddings in the source image.
         explicit identity(const std::filesystem::path &image_path, bool face_detection = false);
+        explicit identity(const image &input, bool face_detection = false);
 
         /// Reads a document, discarding any previous result, and returns
         /// whether an identity number was recognised. Face detection is
         /// optional and disabled by default.
         bool read(const std::filesystem::path &image_path, bool face_detection = false);
+        bool read(const image &input, bool face_detection = false);
 
         [[nodiscard]] document document_type() const noexcept;
         [[nodiscard]] std::string document_type_name() const;
@@ -89,7 +93,7 @@ namespace sc {
         /// was requested. Images are not retained with the embeddings.
         [[nodiscard]] const std::vector<face> &faces() const noexcept;
 
-        /// Rotation in degrees applied before OCR: zero, or 180 after a retry.
+        /// Rotation in degrees applied before OCR: 0, 90 or 180.
         [[nodiscard]] int rotation() const noexcept;
 
         [[nodiscard]] const std::string &surname() const noexcept;

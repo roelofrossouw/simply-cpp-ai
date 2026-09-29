@@ -19,12 +19,17 @@ int main() {
             CHECK(line.box.width() > 0);
             CHECK(line.box.height() > 0);
         }
+
+        reader.detect("resource/test/ID-10.jpg", 90);
+        for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
     }
 
     SECTION("Rejects missing input");
     {
         sc::ocr reader;
         CHECK_THROWS_AS(reader.detect("resource/test/not-an-image.jpg"), std::runtime_error);
+        CHECK_THROWS_AS(reader.detect("resource/test/ID-10.jpg", -1), std::invalid_argument);
+        CHECK_THROWS_AS(reader.detect("resource/test/ID-10.jpg", 101), std::invalid_argument);
     }
 
     TEST_SUMMARY();
