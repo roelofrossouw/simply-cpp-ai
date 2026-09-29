@@ -3,16 +3,13 @@
 #include "config.h"
 #include "image.h"
 #include "onnx.h"
+#include <dbscan.h>
 
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <memory>
-#include <opencv2/core/version.hpp>
-#if CV_VERSION_MAJOR >= 5
-#include <opencv2/geometry/2d.hpp>
-#endif
-#include <opencv2/imgproc.hpp>
+#include <numbers>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -21,6 +18,7 @@ namespace sc {
     namespace impl {
         namespace {
             const fs::path model_dir{SIMPLY_CPP_MODEL_DIR};
+            constexpr double AngleEpsilon = 10.0;
 
             fs::path find_dictionary(const std::string &recognition_model, const fs::path &dictionary) {
                 if (!dictionary.empty()) {
@@ -53,28 +51,80 @@ namespace sc {
                 return characters;
             }
 
-            int clipped(const int value, const int lower, const int upper) {
-                return std::clamp(value, lower, upper);
+            double normalized_angle(double angle) {
+                angle = std::fmod(angle, 180.0);
+                if (angle < 0) angle += 180;
+                return angle;
             }
 
-            rect map_box_to_original(const cv::Rect &box, const image &detector_input, const image &original,
-                                     const cv::Size &map_size) {
+            std::vector<rotated_rect> likely_text_rectangles(const std::vector<rotated_rect> &rectangles,
+                                                             const size_t minimum_neighbors,
+                                                             const double maximum_height_difference) {
+                std::vector<double> angles;
+                angles.reserve(rectangles.size());
+                for (const auto &rectangle: rectangles) angles.push_back(normalized_angle(rectangle.angle()));
+                const auto angle_labels = dbscan(angles, AngleEpsilon, minimum_neighbors, 180);
+                const int angle_cluster_count = angle_labels.empty()
+                                                    ? 0
+                                                    : *std::ranges::max_element(angle_labels) + 1;
+                std::vector<bool> keep(rectangles.size());
+                for (int angle_cluster = 0; angle_cluster < angle_cluster_count; ++angle_cluster) {
+                    std::vector<size_t> members;
+                    std::vector<double> heights;
+                    for (size_t i = 0; i < angle_labels.size(); ++i) {
+                        if (angle_labels[i] != angle_cluster) continue;
+                        members.push_back(i);
+                        heights.push_back(rectangles[i].height());
+                    }
+                    if (members.size() < minimum_neighbors) continue;
+
+                    const auto height_labels = dbscan(heights, maximum_height_difference, minimum_neighbors);
+                    const int height_cluster_count = height_labels.empty()
+                                                         ? 0
+                                                         : *std::ranges::max_element(height_labels) + 1;
+                    for (int height_cluster = 0; height_cluster < height_cluster_count; ++height_cluster) {
+                        for (size_t i = 0; i < height_labels.size(); ++i) {
+                            if (height_labels[i] != height_cluster) continue;
+                            keep[members[i]] = true;
+                        }
+                    }
+                }
+
+                std::vector<rotated_rect> result;
+                result.reserve(rectangles.size());
+                for (size_t i = 0; i < rectangles.size(); ++i)
+                    if (keep[i]) result.push_back(rectangles[i]);
+                return result;
+            }
+
+            rotated_rect map_to_original(const rotated_rect &bounds, const image &detector_input,
+                                         const image &original, const size_i &map_size) {
                 const auto padding = detector_input.padding();
                 const auto content = detector_input.cropped_size();
-                const double x_scale = static_cast<double>(content.width()) / original.size().width();
-                const double y_scale = static_cast<double>(content.height()) / original.size().height();
-                const double map_x_scale = static_cast<double>(detector_input.size().width()) / map_size.width;
-                const double map_y_scale = static_cast<double>(detector_input.size().height()) / map_size.height;
-
-                const double left = (box.x * map_x_scale - padding.x()) / x_scale;
-                const double top = (box.y * map_y_scale - padding.y()) / y_scale;
-                const double right = ((box.x + box.width) * map_x_scale - padding.x()) / x_scale;
-                const double bottom = ((box.y + box.height) * map_y_scale - padding.y()) / y_scale;
-                const double x0 = std::clamp(left, 0.0, static_cast<double>(original.size().width()));
-                const double y0 = std::clamp(top, 0.0, static_cast<double>(original.size().height()));
-                const double x1 = std::clamp(right, x0, static_cast<double>(original.size().width()));
-                const double y1 = std::clamp(bottom, y0, static_cast<double>(original.size().height()));
-                return rect::ltrb(x0, y0, x1, y1);
+                const double scale_x = static_cast<double>(detector_input.size().width()) / map_size.width() *
+                                       original.size().width() / content.width();
+                const double scale_y = static_cast<double>(detector_input.size().height()) / map_size.height() *
+                                       original.size().height() / content.height();
+                const double center_x = (bounds.center().x() * detector_input.size().width() / map_size.width() -
+                                         padding.x()) * original.size().width() / content.width();
+                const double center_y = (bounds.center().y() * detector_input.size().height() / map_size.height() -
+                                         padding.y()) * original.size().height() / content.height();
+                const double angle = bounds.angle() * std::numbers::pi / 180.0;
+                const double width_scale = std::hypot(std::cos(angle) * scale_x, std::sin(angle) * scale_y);
+                const double height_scale = std::hypot(std::sin(angle) * scale_x, std::cos(angle) * scale_y);
+                double width = bounds.width() * width_scale;
+                double height = bounds.height() * height_scale;
+                double mapped_angle = std::atan2(std::sin(angle) * scale_y, std::cos(angle) * scale_x) *
+                                      180.0 / std::numbers::pi;
+                if (height > width) {
+                    std::swap(width, height);
+                    mapped_angle += 90;
+                }
+                return {
+                    {center_x, center_y},
+                    {width, height},
+                    normalized_angle(mapped_angle)
+                };
             }
         }
 
@@ -85,18 +135,36 @@ namespace sc {
                 : detector(detection_model),
                   recognizer(recognition_model),
                   characters(load_dictionary(find_dictionary(recognition_model, dictionary))) {
+#ifndef NDEBUG
+                detector.show_shapes();
+                recognizer.show_shapes();
+#endif
             }
 
             void set_threshold(const double threshold) {
                 threshold_ = {threshold, 2};
             }
 
-            void run(const fs::path &image_path) {
-                const image input{image_path.string()};
-                run(input);
+            void set_minimum_neighbors(const size_t minimum_neighbors) {
+                if (minimum_neighbors == 0)
+                    throw std::invalid_argument{"OCR minimum neighbor count must be greater than zero"};
+                minimum_neighbors_ = minimum_neighbors;
             }
 
-            void run(const image &input) {
+            void set_maximum_height_difference(const double difference) {
+                if (!std::isfinite(difference) || difference < 0)
+                    throw std::invalid_argument{"OCR maximum height difference must be finite and non-negative"};
+                maximum_height_difference_ = difference;
+            }
+
+            void run(const fs::path &image_path, const double minimum_confidence) {
+                validate_minimum_confidence(minimum_confidence);
+                const image input{image_path.string()};
+                run(input, minimum_confidence);
+            }
+
+            void run(const image &input, const double minimum_confidence) {
+                validate_minimum_confidence(minimum_confidence);
                 lines_.clear();
                 original = std::make_unique<image>(input);
                 image detector_input{*original};
@@ -108,51 +176,52 @@ namespace sc {
                     throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
 
                 const auto &output = outputs.front();
-                const cv::Size map_size{static_cast<int>(output.shape[3]), static_cast<int>(output.shape[2])};
-                if (map_size.width <= 0 || map_size.height <= 0)
+                const size_i map_size{static_cast<int>(output.shape[3]), static_cast<int>(output.shape[2])};
+                if (map_size.width() <= 0 || map_size.height() <= 0)
                     throw std::runtime_error{"PaddleOCR detection model returned an invalid map size"};
 
-                cv::Mat probability_map(map_size.height, map_size.width, CV_32F, output.data);
-                cv::Mat mask;
-                cv::threshold(probability_map, mask, static_cast<double>(threshold_) / 100.0, 255,
-                              cv::THRESH_BINARY);
-                mask.convertTo(mask, CV_8U);
+                image probability_map = image::from_blob(output.data, map_size.width(), map_size.height(), 1);
+                probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
+                auto rectangles = probability_map.find_min_area_rects(500);
+                rectangles = likely_text_rectangles(rectangles, minimum_neighbors_, maximum_height_difference_);
 
-                std::vector<std::vector<cv::Point>> contours;
-                cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-                std::vector<cv::Rect> boxes;
                 const auto padding = detector_input.padding();
                 const auto content = detector_input.cropped_size();
-                const double scale_x = static_cast<double>(detector_input.size().width()) / map_size.width;
-                const double scale_y = static_cast<double>(detector_input.size().height()) / map_size.height;
-                for (const auto &contour: contours) {
-                    if (std::abs(cv::contourArea(contour)) < 100) continue;
-                    const auto bounds = cv::boundingRect(contour);
-                    const int left = clipped(static_cast<int>(std::floor(bounds.x * scale_x)) - 5,
-                                             padding.x(), padding.x() + content.width());
-                    const int top = clipped(static_cast<int>(std::floor(bounds.y * scale_y)) - 5,
-                                            padding.y(), padding.y() + content.height());
-                    const int right = clipped(static_cast<int>(std::ceil((bounds.x + bounds.width) * scale_x)) + 5,
-                                              padding.x(), padding.x() + content.width());
-                    const int bottom = clipped(static_cast<int>(std::ceil((bounds.y + bounds.height) * scale_y)) + 5,
-                                               padding.y(), padding.y() + content.height());
-                    if (right > left && bottom > top) boxes.emplace_back(left, top, right - left, bottom - top);
+                std::vector<rotated_rect> source_rectangles;
+                source_rectangles.reserve(rectangles.size());
+                for (const auto &bounds: rectangles) {
+                    const auto mapped = map_to_original(bounds, detector_input, *original, map_size);
+                    source_rectangles.emplace_back(
+                        mapped.center(),
+                        size{mapped.width() * 1.05, mapped.height() * 1.5},
+                        mapped.angle());
                 }
-
-                std::sort(boxes.begin(), boxes.end(), [](const cv::Rect &lhs, const cv::Rect &rhs) {
-                    if (lhs.y != rhs.y) return lhs.y < rhs.y;
-                    return lhs.x < rhs.x;
+                std::ranges::sort(source_rectangles, [](const rotated_rect &lhs, const rotated_rect &rhs) {
+                    const auto lhs_box = static_cast<rect>(lhs);
+                    const auto rhs_box = static_cast<rect>(rhs);
+                    if (lhs_box.top() != rhs_box.top()) return lhs_box.top() < rhs_box.top();
+                    return lhs_box.left() < rhs_box.left();
                 });
 
-                for (const auto &box: boxes) {
-                    auto word_image = detector_input.crop({box.x, box.y, box.width, box.height});
-                    if (word_image.size().width() < word_image.size().height()) word_image.rotate(90);
+                std::vector<image> word_images;
+                word_images.reserve(source_rectangles.size());
+                for (const auto &bounds: source_rectangles) {
+                    auto word_image = original->deskewed(bounds);
                     word_image.resize_to({0, 48});
-                    const auto recognized = decode(recognizer.process_image(word_image));
-                    if (recognized.text.empty()) continue;
+                    word_images.push_back(std::move(word_image));
+                }
+                if (word_images.empty()) return;
+
+                const auto recognition_outputs = recognizer.process_images(word_images);
+                if (recognition_outputs.size() != 1 ||
+                    recognition_outputs.front().shape.size() != 3 ||
+                    recognition_outputs.front().shape[0] != static_cast<int64_t>(word_images.size()))
+                    throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
+                for (size_t i = 0; i < source_rectangles.size(); ++i) {
+                    const auto recognized = decode(recognition_outputs, i);
+                    if (recognized.text.empty() || recognized.confidence * 100.0 < minimum_confidence) continue;
                     lines_.push_back({recognized.text, {recognized.confidence * 100.0, 2},
-                                      map_box_to_original(box, detector_input, *original, map_size)});
+                                      static_cast<rect>(source_rectangles[i])});
                 }
             }
 
@@ -198,16 +267,24 @@ namespace sc {
             }
 
         private:
+            static void validate_minimum_confidence(const double minimum_confidence) {
+                if (!std::isfinite(minimum_confidence) || minimum_confidence < 0 || minimum_confidence > 100)
+                    throw std::invalid_argument{"OCR minimum confidence must be finite and between 0 and 100"};
+            }
+
             struct decoded_text {
                 std::string text;
                 double confidence{};
             };
 
-            [[nodiscard]] decoded_text decode(const std::vector<output> &outputs) const {
+            [[nodiscard]] decoded_text decode(const std::vector<output> &outputs,
+                                              const size_t batch_index = 0) const {
                 if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
-                    outputs.front().shape[0] != 1 || outputs.front().shape[1] <= 0 ||
+                    outputs.front().shape[0] <= static_cast<int64_t>(batch_index) ||
+                    outputs.front().shape[1] <= 0 ||
                     outputs.front().shape[2] <= 0)
-                    throw std::runtime_error{"PaddleOCR recognition model must return a [1, time, classes] tensor"};
+                    throw std::runtime_error{
+                        "PaddleOCR recognition model must return a [batch, time, classes] tensor"};
 
                 const auto &output = outputs.front();
                 const auto timesteps = static_cast<int>(output.shape[1]);
@@ -222,8 +299,11 @@ namespace sc {
                 double confidence_sum{};
                 int recognized_characters{};
                 int previous_class{};
+                size_t blank_run{};
+                std::vector<int> decoded_classes;
+                std::vector<size_t> blank_gaps;
                 for (int timestep = 0; timestep < timesteps; ++timestep) {
-                    const auto *scores = output.data + timestep * classes;
+                    const auto *scores = output.data + (batch_index * timesteps + timestep) * classes;
                     int best_class{};
                     float best_score = scores[0];
                     for (int class_index = 1; class_index < character_size; ++class_index) {
@@ -232,12 +312,42 @@ namespace sc {
                             best_class = class_index;
                         }
                     }
+                    if (best_class == 0) {
+                        ++blank_run;
+                    } else {
+                        if (best_class != previous_class) {
+                            decoded_classes.push_back(best_class);
+                            blank_gaps.push_back(blank_run);
+                        }
+                        blank_run = 0;
+                    }
                     if (best_class != 0 && best_class != previous_class) {
-                        result.text += characters[best_class];
                         confidence_sum += best_score;
                         ++recognized_characters;
                     }
                     previous_class = best_class;
+                }
+                std::vector<size_t> nonzero_gaps;
+                for (const size_t gap: blank_gaps)
+                    if (gap > 0) nonzero_gaps.push_back(gap);
+                size_t typical_gap{};
+                if (!nonzero_gaps.empty()) {
+                    std::ranges::sort(nonzero_gaps);
+                    typical_gap = nonzero_gaps[nonzero_gaps.size() / 2];
+                }
+                // Infer spacing only for alphabetic runs; large CTC blanks in digits and mixed text
+                // are common within tokens and otherwise create spurious separators.
+                const size_t word_gap = std::max<size_t>(9, typical_gap * 3);
+                const bool alphabetic = std::ranges::all_of(decoded_classes, [this](const int class_index) {
+                    return std::ranges::all_of(characters[class_index], [](const unsigned char c) {
+                        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+                    });
+                });
+                for (size_t i = 0; i < decoded_classes.size(); ++i) {
+                    if (alphabetic && i && blank_gaps[i] >= word_gap &&
+                        characters[decoded_classes[i]] != " " && result.text.back() != ' ')
+                        result.text += ' ';
+                    result.text += characters[decoded_classes[i]];
                 }
                 if (recognized_characters) result.confidence = confidence_sum / recognized_characters;
                 return result;
@@ -249,6 +359,8 @@ namespace sc {
             std::unique_ptr<image> original;
             std::vector<ocr::line> lines_;
             percent threshold_{50, 2};
+            size_t minimum_neighbors_{5};
+            double maximum_height_difference_{30};
         };
     }
 
@@ -277,12 +389,20 @@ namespace sc {
         impl->set_threshold(threshold);
     }
 
-    void ocr::detect(const std::filesystem::path &image_path) const {
-        impl->run(image_path);
+    void ocr::set_minimum_neighbors(const size_t minimum_neighbors) {
+        impl->set_minimum_neighbors(minimum_neighbors);
     }
 
-    void ocr::detect(const image &input) const {
-        impl->run(input);
+    void ocr::set_maximum_height_difference(const double maximum_height_difference) {
+        impl->set_maximum_height_difference(maximum_height_difference);
+    }
+
+    void ocr::detect(const std::filesystem::path &image_path, const double minimum_confidence) const {
+        impl->run(image_path, minimum_confidence);
+    }
+
+    void ocr::detect(const image &input, const double minimum_confidence) const {
+        impl->run(input, minimum_confidence);
     }
 
     const std::vector<ocr::line> &ocr::lines() const {

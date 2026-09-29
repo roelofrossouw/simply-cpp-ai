@@ -7,6 +7,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -17,6 +18,8 @@ using namespace std;
 
 namespace sc {
     namespace impl {
+        constexpr size_t MinimumHighConfidenceDetections = 3;
+
         // A recognised line of text. Words are kept both spaced, for reading
         // labelled fields, and packed, because the identity number on a green
         // ID book is printed in widely separated groups that the recogniser
@@ -291,6 +294,20 @@ namespace sc {
             return best;
         }
 
+        static constexpr array<string_view, 24> CAPTIONS = {
+            "SURNAME", "VANSURNAME", "GIVENNAMES", "FORENAMES", "NAMES", "VOORNAME", "PRENOMS", "NOM",
+            "NATIONALIT", "COUNTRYOFBIRTH", "PLACEOFBIRTH", "GEBOORTEDISTRIK", "STATUS", "DATEISSUED",
+            "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFEXPIRY", "DATEEXPIRES", "PASSPORTNO", "IDENTITYNUMBER",
+            "IDENTITYNO", "IDNO", "SEX", "GESLAG"
+        };
+
+        static bool is_caption(const string &value) {
+            return value.find("SOUTHAFRICA") != string::npos || value.find("REPUBLIC") != string::npos ||
+                   ranges::any_of(CAPTIONS, [&value](const string_view caption) {
+                return value.find(caption) != string::npos;
+            });
+        }
+
         // -------------------------------------------------------- field labels
 
         // Returns the part of a line that follows its first n alphanumeric
@@ -320,17 +337,6 @@ namespace sc {
         // captions on these documents recognise poorly.
         static string value_for_label(const vector<text_line> &lines,
                                       const initializer_list<string_view> keys) {
-            static constexpr array<string_view, 24> CAPTIONS = {
-                "SURNAME", "VANSURNAME", "GIVENNAMES", "FORENAMES", "NAMES", "VOORNAME", "PRENOMS", "NOM",
-                "NATIONALIT", "COUNTRYOFBIRTH", "PLACEOFBIRTH", "GEBOORTEDISTRIK", "STATUS", "DATEISSUED",
-                "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFEXPIRY", "DATEEXPIRES", "PASSPORTNO", "IDENTITYNUMBER",
-                "IDENTITYNO", "IDNO", "SEX", "GESLAG"
-            };
-            const auto is_caption = [](const string &value) {
-                return ranges::any_of(CAPTIONS, [&value](const string_view caption) {
-                    return value.find(caption) != string::npos;
-                });
-            };
             const text_line *best_value = nullptr;
             double best_score = numeric_limits<double>::infinity();
 
@@ -411,15 +417,9 @@ namespace sc {
             return lines;
         }
 
-        static vector<text_line> recognise(const filesystem::path &image_path) {
-            auto &reader = recognizer();
-            reader.detect(image_path);
-            return make_text_lines(reader.lines());
-        }
-
         static vector<text_line> recognise(const image &input) {
             auto &reader = recognizer();
-            reader.detect(input);
+            reader.detect(input, 90);
             return make_text_lines(reader.lines());
         }
 
@@ -448,18 +448,43 @@ namespace sc {
         class identity_reader {
         public:
             static identity read(const filesystem::path &image_path, const bool face_detection) {
+                const image input{image_path.string()};
+                return read(input, face_detection);
+            }
+
+            static identity read(const image &input, const bool face_detection) {
+                if (input.empty()) throw invalid_argument{"Cannot read identity from an empty image"};
                 identity best;
                 best.face_detection_performed_ = face_detection;
 
                 if (face_detection) {
                     static thread_local facedetector detector;
-                    best.faces_ = detector.detect(image_path, false);
+                    best.faces_ = detector.detect(input, false);
                 }
 
-                populate(best, recognise(image_path));
+                const auto lines = recognise(input);
+                size_t best_detection_count = lines.size();
+                populate(best, lines);
+                if (best_detection_count < MinimumHighConfidenceDetections) {
+                    image sideways{input};
+                    sideways.rotate(90);
+                    auto sideways_lines = recognise(sideways);
+                    identity candidate;
+                    candidate.rotation_ = 90;
+                    candidate.faces_ = best.faces_;
+                    candidate.face_detection_performed_ = face_detection;
+                    populate(candidate, sideways_lines);
+
+                    if (candidate.has_id_number() && sideways_lines.size() > best_detection_count) {
+                        return candidate;
+                    }
+                    if (!best.has_id_number() && sideways_lines.size() > best_detection_count) {
+                        best = std::move(candidate);
+                    }
+                }
                 if (best.has_id_number()) return best;
 
-                image upside_down{image_path.string()};
+                image upside_down{input};
                 upside_down.rotate(180);
                 identity rotated;
                 populate(rotated, recognise(upside_down));
@@ -530,7 +555,7 @@ namespace sc {
                 });
                 const auto card = count({
                     "IDENTITYCARD", "NATIONALIDENTITY", "IDENTITYNUMBER",
-                    "COUNTRYOFBIRTH", "STATUS"
+                    "COUNTRYOFBIRTH", "STATUS", "SOUTHAFRICA"
                 });
 
                 const auto best = max({passport, book, card});
@@ -561,11 +586,104 @@ namespace sc {
                              parse_date(value_for_label(lines, {"DATEISSUED", "DATEOFISSUE", "DATUMUITGEREIK"})));
                 set_if_empty(result.date_of_expiry_,
                              parse_date(value_for_label(lines, {"DATEOFEXPIRY", "DATEEXPIRES"})));
+                if (result.document_ == identity::document::id_card &&
+                    (result.surname_.empty() || result.names_.empty())) {
+                    const auto [surname, names] = nearby_unlabelled_names(lines);
+                    set_if_empty(result.surname_, surname);
+                    set_if_empty(result.names_, names);
+                }
+                if (result.surname_.empty() && !result.names_.empty() &&
+                    result.document_ == identity::document::id_book)
+                    result.surname_ = nearby_unlabelled_name(lines, result.names_);
 
                 if (result.passport_number_.empty()) {
                     const string passport = keep_alnum(value_for_label(lines, {"PASSPORTNO"}));
                     if (passport.size() >= 8 && passport.size() <= 9) result.passport_number_ = passport;
                 }
+            }
+
+            static pair<string, string> nearby_unlabelled_names(const vector<text_line> &lines) {
+                const auto words = [](const string &value) {
+                    size_t count{};
+                    bool in_word = false;
+                    for (const unsigned char c: value) {
+                        if (isalpha(c)) {
+                            if (!in_word) ++count;
+                            in_word = true;
+                        } else {
+                            in_word = false;
+                        }
+                    }
+                    return count;
+                };
+                const text_line *best_surname = nullptr;
+                const text_line *best_names = nullptr;
+                double best_gap = numeric_limits<double>::infinity();
+                for (const auto &surname: lines) {
+                    const string surname_text = clean_name(surname.text);
+                    if (surname_text.empty() || words(surname_text) != 1 ||
+                        is_caption(surname.alnum) || surname_text.size() < 3)
+                        continue;
+                    for (const auto &names: lines) {
+                        const string names_text = clean_name(names.text);
+                        if (&surname == &names || names_text.empty() || words(names_text) < 2 ||
+                            is_caption(names.alnum))
+                            continue;
+
+                        const double vertical_gap = names.box.top() - surname.box.bottom();
+                        const double horizontal_gap = max({
+                            0.0, surname.box.left() - names.box.right(), names.box.left() - surname.box.right()
+                        });
+                        const double text_height = max(
+                            min(surname.box.width(), surname.box.height()),
+                            min(names.box.width(), names.box.height()));
+                        if (vertical_gap < -text_height || vertical_gap > text_height * 4 ||
+                            horizontal_gap > text_height * 2)
+                            continue;
+
+                        const double gap = hypot(max(0.0, vertical_gap), horizontal_gap);
+                        if (gap >= best_gap) continue;
+                        best_gap = gap;
+                        best_surname = &surname;
+                        best_names = &names;
+                    }
+                }
+                if (!best_surname || !best_names) return {};
+                return {clean_name(best_surname->text), clean_name(best_names->text)};
+            }
+
+            static string nearby_unlabelled_name(const vector<text_line> &lines, const string &names) {
+                const text_line *names_line = nullptr;
+                for (const auto &line: lines) {
+                    if (clean_name(line.text) == names) {
+                        names_line = &line;
+                        break;
+                    }
+                }
+                if (!names_line) return {};
+
+                const text_line *best = nullptr;
+                double best_distance = numeric_limits<double>::infinity();
+                for (const auto &candidate: lines) {
+                    if (&candidate == names_line || candidate.alnum.size() < 3 ||
+                        is_caption(candidate.alnum) ||
+                        !ranges::all_of(candidate.text, [](const unsigned char c) {
+                            return isalpha(c) || isspace(c) || c == '-' || c == '\'';
+                        }))
+                        continue;
+
+                    const auto &a = names_line->box;
+                    const auto &b = candidate.box;
+                    const double horizontal_gap = max({0.0, a.left() - b.right(), b.left() - a.right()});
+                    const double vertical_gap = max({0.0, a.top() - b.bottom(), b.top() - a.bottom()});
+                    const double distance = hypot(horizontal_gap, vertical_gap);
+                    const double text_height = max(min(a.width(), a.height()), min(b.width(), b.height()));
+                    if (distance > text_height * 3.0 || distance >= best_distance) continue;
+
+                    best = &candidate;
+                    best_distance = distance;
+                }
+                return best ? clean_name(best->text) : string{};
             }
 
             // Confirms the number against parts of the document it was not read
@@ -652,8 +770,17 @@ namespace sc {
         read(image_path, face_detection);
     }
 
+    identity::identity(const image &input, const bool face_detection) {
+        read(input, face_detection);
+    }
+
     bool identity::read(const filesystem::path &image_path, const bool face_detection) {
         *this = impl::identity_reader::read(image_path, face_detection);
+        return has_id_number();
+    }
+
+    bool identity::read(const image &input, const bool face_detection) {
+        *this = impl::identity_reader::read(input, face_detection);
         return has_id_number();
     }
 
