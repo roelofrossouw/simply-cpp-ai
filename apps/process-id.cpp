@@ -3,6 +3,8 @@
 #include "identity.h"
 #include <postgres.h>
 
+#include "ocr.h"
+
 using namespace std;
 
 const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/"};
@@ -19,6 +21,9 @@ int main() {
     sc::timer sw;
 
     for (const auto &file: filesystem::directory_iterator(image_path)) {
+        // if (file.path().filename() != "ID-38b.jpg") continue;
+        if (file.path().filename() != "ID-38.jpg") continue;
+        // Could not find the ID "ID-10.jpg"")
         if (!file.is_regular_file()) continue;
         sc::identity id(file, true);
         if (!id.has_id_number()) {
@@ -48,8 +53,8 @@ int main() {
                 id.surname(),
                 face.to_json()["features"].dump()
             };
-            auto db_result = dev.exec(query, parameters);
-            cout << sw << " DB " << db_result[0]["id"] << endl;
+            // auto db_result = dev.exec(query, parameters);
+            // cout << sw << " DB " << db_result[0]["id"] << endl;
             sw.reset();
         }
     }

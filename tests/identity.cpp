@@ -1,5 +1,7 @@
 #include "identity.h"
 #include <algorithm>
+#include <chrono>
+#include <image.h>
 #include <sc_test.h>
 #include <filesystem>
 #include <stdexcept>
@@ -93,6 +95,11 @@ int main() {
         CHECK(card.checks().date_of_birth); // printed date corroborates the number
         CHECK_BETWEEN(static_cast<double>(card.confidence()), 85.0, 100.0);
         CHECK(!card.surname().empty());
+        CHECK(!card.names().empty());
+        CHECK(card.names() != card.country_of_birth());
+        CHECK(card.names() != card.nationality());
+        CHECK(card.names() != card.status());
+        CHECK_EQ(card.country_of_birth(), card.nationality());
         CHECK(card.citizen().has_value());
     }
 
@@ -115,6 +122,22 @@ int main() {
         CHECK(rotated.has_id_number());
         CHECK_EQ(rotated.rotation(), 0);
         CHECK(sc::identity::valid_id_number(rotated.id_number()));
+    }
+
+    SECTION("Retrying an upside-down document");
+    {
+        const auto path = filesystem::temp_directory_path()
+                          / ("sc-ai-identity-rotated-" +
+                             to_string(chrono::steady_clock::now().time_since_epoch().count()) + ".jpg");
+        sc::image upside_down{"resource/test/ID-33.jpg"};
+        upside_down.rotate(180);
+        CHECK(upside_down.save(path.string()));
+
+        const sc::identity document{path};
+        CHECK(document.has_id_number());
+        CHECK(sc::identity::valid_id_number(document.id_number()));
+        CHECK_EQ(document.rotation(), 180);
+        filesystem::remove(path);
     }
 
     SECTION("Reading a green ID book");
