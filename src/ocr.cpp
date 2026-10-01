@@ -212,6 +212,11 @@ namespace sc {
 #endif
             }
 
+            void set_threshold(const double threshold) {
+                validate_minimum_confidence(threshold);
+                threshold_ = {threshold, 2};
+            }
+
             [[nodiscard]] ocr_recognizer::result recognize(const image &input) const {
                 if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
                 image resized{input};
@@ -235,7 +240,10 @@ namespace sc {
 
                 std::vector<ocr_recognizer::result> result;
                 result.reserve(resized.size());
-                for (size_t i = 0; i < resized.size(); ++i) result.push_back(decode(outputs, i));
+                for (size_t i = 0; i < resized.size(); ++i) {
+                    auto recognized = decode(outputs, i);
+                    if (recognized.confidence >= threshold_) result.push_back(std::move(recognized));
+                }
                 return result;
             }
 
@@ -312,6 +320,7 @@ namespace sc {
 
             onnx recognizer;
             std::vector<std::string> characters;
+            percent threshold_{0, 2};
         };
 
         class ocr_impl {
@@ -345,8 +354,18 @@ namespace sc {
                 original = std::make_unique<image>(input);
                 const auto regions = detector.detect(*original);
                 const auto text_images = detector.text_images(*original, regions);
+                std::vector<image> orientation_images;
+                orientation_images.reserve(text_images.size() * 2);
+                for (const auto &text_image: text_images) {
+                    orientation_images.push_back(text_image);
+                    auto &upside_down = orientation_images.emplace_back(text_image);
+                    upside_down.rotate(180);
+                }
+                const auto recognized_images = recognizer.recognize(orientation_images);
                 for (size_t i = 0; i < regions.size(); ++i) {
-                    const auto recognized = recognizer.recognize(text_images[i]);
+                    const auto &forward = recognized_images[i * 2];
+                    const auto &upside_down = recognized_images[i * 2 + 1];
+                    const auto &recognized = upside_down.confidence > forward.confidence ? upside_down : forward;
                     if (recognized.text.empty() || recognized.confidence < minimum_confidence) continue;
                     lines_.push_back({
                         recognized.text, recognized.confidence, static_cast<rect>(regions[i])
@@ -457,6 +476,10 @@ namespace sc {
 
     ocr_recognizer::~ocr_recognizer() {
         delete impl;
+    }
+
+    void ocr_recognizer::set_threshold(const double threshold) {
+        impl->set_threshold(threshold);
     }
 
     ocr_recognizer::result ocr_recognizer::recognize(const image &input) const {

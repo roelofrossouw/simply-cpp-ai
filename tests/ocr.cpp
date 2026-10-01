@@ -22,6 +22,33 @@ int main() {
 
         reader.detect("resource/test/ID-10.jpg", 90);
         for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
+
+        const sc::image input{"resource/test/ID-10.jpg"};
+        sc::ocr_detector detector;
+        sc::ocr_recognizer recognizer;
+        const auto regions = detector.detect(input);
+        const auto text_images = detector.text_images(input, regions);
+        std::vector<sc::image> orientation_images;
+        orientation_images.reserve(text_images.size() * 2);
+        for (const auto &text_image: text_images) {
+            orientation_images.push_back(text_image);
+            auto &upside_down = orientation_images.emplace_back(text_image);
+            upside_down.rotate(180);
+        }
+        const auto recognized = recognizer.recognize(orientation_images);
+        reader.detect(input, 0);
+        std::vector<sc::ocr_recognizer::result> expected;
+        for (size_t i = 0; i < regions.size(); ++i) {
+            const auto &forward = recognized[i * 2];
+            const auto &upside_down = recognized[i * 2 + 1];
+            const auto &best = upside_down.confidence > forward.confidence ? upside_down : forward;
+            if (!best.text.empty()) expected.push_back(best);
+        }
+        CHECK_EQ(reader.lines().size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            CHECK_EQ(reader.lines()[i].text, expected[i].text);
+            CHECK_EQ(reader.lines()[i].confidence, expected[i].confidence);
+        }
     }
 
     SECTION("Detects regions and recognises extracted text");
@@ -52,6 +79,17 @@ int main() {
             CHECK(result.confidence >= 0);
             CHECK(result.confidence <= 100);
         }
+
+        constexpr double recognition_threshold = 90;
+        const auto expected_count = std::ranges::count_if(recognised, [](const sc::ocr_recognizer::result &result) {
+            return result.confidence >= recognition_threshold;
+        });
+        recognizer.set_threshold(recognition_threshold);
+        const auto filtered = recognizer.recognize(text_images);
+        CHECK_EQ(filtered.size(), expected_count);
+        for (const auto &result: filtered) CHECK(result.confidence >= recognition_threshold);
+        CHECK_THROWS_AS(recognizer.set_threshold(-1), std::invalid_argument);
+        CHECK_THROWS_AS(recognizer.set_threshold(101), std::invalid_argument);
     }
 
     SECTION("Rejects missing input");

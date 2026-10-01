@@ -65,6 +65,9 @@ namespace sc {
 
         ~ocr_recognizer();
 
+        /// Sets the minimum recognition confidence, as a percentage from 0 to 100, for batch results.
+        void set_threshold(double threshold);
+
         /// Recognises one cropped text image.
         [[nodiscard]] result recognize(const image &input) const;
 
@@ -104,11 +107,11 @@ namespace sc {
         /// Sets DBSCAN's maximum height distance in detector-map pixels.
         void set_maximum_height_difference(double maximum_height_difference);
 
-        /// Detects text with at least this recognition confidence, as a percentage from 0 to 100.
-        void detect(const std::filesystem::path &image_path, double minimum_confidence = 0) const;
+        /// Recognises each region upright and upside down, retaining results at or above this confidence percentage.
+        void detect(const std::filesystem::path &image_path, double minimum_confidence = 85) const;
 
-        /// Detects text with at least this recognition confidence, as a percentage from 0 to 100.
-        void detect(const image &input, double minimum_confidence = 0) const;
+        /// Recognises each region upright and upside down, retaining results at or above this confidence percentage.
+        void detect(const image &input, double minimum_confidence = 85) const;
 
         [[nodiscard]] const std::vector<line> &lines() const;
 

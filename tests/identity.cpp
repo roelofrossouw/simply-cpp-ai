@@ -113,6 +113,18 @@ int main() {
         CHECK(card.citizen().has_value());
     }
 
+    SECTION("Reading usable fields without an identity number");
+    {
+        // ID-10's number is below OCR resolution, but its compact card layout
+        // still supplies a given name and surname.
+        const sc::identity card{"resource/test/ID-10.jpg"};
+        CHECK(!card.has_id_number());
+        CHECK(card.document_type() == sc::identity::document::id_card);
+        CHECK_EQ(card.names(), string{"LUCAS"});
+        CHECK_EQ(card.surname(), string{"MASANGO"});
+        CHECK_EQ(card.rotation(), 0);
+    }
+
     SECTION("Reading names from a green ID book");
     {
         const sc::identity book{"resource/test/ID-38.jpg"};
@@ -149,7 +161,7 @@ int main() {
         const sc::identity rotated{"resource/test/d1333 id.jpg"};
         CHECK(rotated.has_id_number());
         CHECK(sc::identity::valid_id_number(rotated.id_number()));
-        CHECK_EQ(rotated.rotation(), 90);
+        CHECK_EQ(rotated.rotation(), 0);
         CHECK_EQ(rotated.surname(), string{"SELEPE"});
         CHECK_EQ(rotated.names(), string{"JONAS NALANE"});
     }
@@ -166,7 +178,9 @@ int main() {
         const sc::identity document{path};
         CHECK(document.has_id_number());
         CHECK(sc::identity::valid_id_number(document.id_number()));
-        CHECK_EQ(document.rotation(), 180);
+        CHECK_EQ(document.rotation(), 0);
+        CHECK(!document.surname().empty());
+        CHECK(!document.names().empty());
         filesystem::remove(path);
     }
 
