@@ -18,8 +18,6 @@ using namespace std;
 
 namespace sc {
     namespace impl {
-        constexpr size_t MinimumHighConfidenceDetections = 3;
-
         // A recognised line of text. Words are kept both spaced, for reading
         // labelled fields, and packed, because the identity number on a green
         // ID book is printed in widely separated groups that the recogniser
@@ -117,15 +115,19 @@ namespace sc {
             // ddMMMyyyy
             if (packed.size() >= 9) {
                 for (size_t i = 0; i + 9 <= packed.size(); ++i) {
-                    const string_view window{packed.data() + i, 9};
+                    string window{packed.substr(i, 9)};
                     if (!isdigit(static_cast<unsigned char>(window[0]))) continue;
                     if (!isdigit(static_cast<unsigned char>(window[1]))) continue;
-                    const auto month = ranges::find(MONTHS, window.substr(2, 3));
+                    // OCR often reads the B in FEB as 8; repair only the
+                    // month token, after the surrounding date shape matched.
+                    for (size_t month_at = 2; month_at < 5; ++month_at)
+                        if (window[month_at] == '8') window[month_at] = 'B';
+                    const auto month = ranges::find(MONTHS, string_view{window}.substr(2, 3));
                     if (month == MONTHS.end()) continue;
                     if (!all_of(window.begin() + 5, window.end(), ::isdigit)) continue;
-                    const int day = stoi(string{window.substr(0, 2)});
+                    const int day = stoi(window.substr(0, 2));
                     const int month_number = static_cast<int>(ranges::distance(MONTHS.begin(), month)) + 1;
-                    const int year = stoi(string{window.substr(5, 4)});
+                    const int year = stoi(window.substr(5, 4));
                     if (year >= 1900 && year <= 2100 && plausible_month_day(month_number, day))
                         return iso_date(year, month_number, day);
                 }
@@ -361,15 +363,21 @@ namespace sc {
             return best;
         }
 
-        static constexpr array<string_view, 24> CAPTIONS = {
+        static constexpr array<string_view, 26> CAPTIONS = {
             "SURNAME", "VANSURNAME", "GIVENNAMES", "FORENAMES", "NAMES", "VOORNAME", "PRENOMS", "NOM",
             "NATIONALIT", "COUNTRYOFBIRTH", "PLACEOFBIRTH", "GEBOORTEDISTRIK", "STATUS", "DATEISSUED",
-            "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFEXPIRY", "DATEEXPIRES", "PASSPORTNO", "IDENTITYNUMBER",
+            "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFBIRTH", "GEBOORTEDATUM", "DATEOFEXPIRY", "DATEEXPIRES",
+            "PASSPORTNO", "IDENTITYNUMBER",
             "IDENTITYNO", "IDNO", "SEX", "GESLAG"
         };
 
         static bool is_caption(const string &value) {
             return value.find("SOUTHAFRICA") != string::npos || value.find("REPUBLIC") != string::npos ||
+                   value.find("SABURGER") != string::npos || value.find("SACITIZEN") != string::npos ||
+                   value.find("BINNELANDSESAKE") != string::npos ||
+                   value.find("ANDSESAKE") != string::npos || value.find("CITIZEN") != string::npos ||
+                   value.find("IDENTITEITSDOKUMENT") != string::npos ||
+                   value.find("ADRESVERANDERING") != string::npos || value.find("GEREGISTREERDE") != string::npos ||
                    ranges::any_of(CAPTIONS, [&value](const string_view caption) {
                 return value.find(caption) != string::npos;
             });
@@ -411,6 +419,7 @@ namespace sc {
                 for (const auto key: keys) {
                     const auto at = lines[i].alnum.find(key);
                     if (at == string::npos) continue;
+                    if (key == "VAN" && at != 0) continue;
 
                     const string tail = trim(tail_after(lines[i].text, at + key.size()));
                     if (separator_after_alnum(lines[i].text, at + key.size()) &&
@@ -486,7 +495,7 @@ namespace sc {
 
         static vector<text_line> recognise(const image &input) {
             auto &reader = recognizer();
-            reader.detect(input, 90);
+            reader.detect(input, 85);
             return make_text_lines(reader.lines());
         }
 
@@ -497,17 +506,30 @@ namespace sc {
             double confidence{};
         };
 
+        static optional<number_hit> valid_number_in(const string &value, const double confidence) {
+            const string digits = keep_digits(value);
+            if (digits.size() < 13) return nullopt;
+            for (size_t start = 0; start + 13 <= digits.size(); ++start) {
+                const string candidate = digits.substr(start, 13);
+                if (identity::valid_id_number(candidate)) return number_hit{candidate, confidence};
+            }
+            return nullopt;
+        }
+
+        // A number joined to its printed caption has a stronger provenance
+        // than a coincidental thirteen-digit sequence elsewhere on the page.
+        static optional<number_hit> find_labelled_id_number(const vector<text_line> &lines) {
+            const string labelled = value_for_label(lines, {"IDENTITYNUMBER", "IDENTITYNO", "IDNO"});
+            if (labelled.empty()) return nullopt;
+            return valid_number_in(labelled, 0.0);
+        }
+
         // Looks for a valid identity number in the digits of each line. The
         // number is printed in separated groups on a green ID book, so the
         // digits of a whole line are joined before the window slides over them.
         static optional<number_hit> find_id_number(const vector<text_line> &lines) {
             for (const auto &line: lines) {
-                const string digits = keep_digits(line.packed);
-                if (digits.size() < 13) continue;
-                for (size_t start = 0; start + 13 <= digits.size(); ++start) {
-                    const string candidate = digits.substr(start, 13);
-                    if (identity::valid_id_number(candidate)) return number_hit{candidate, line.confidence};
-                }
+                if (const auto number = valid_number_in(line.packed, line.confidence)) return number;
             }
             return nullopt;
         }
@@ -529,45 +551,44 @@ namespace sc {
                     best.faces_ = detector.detect(input, false);
                 }
 
-                const auto lines = recognise(input);
-                size_t best_detection_count = lines.size();
-                populate(best, lines);
-                if (best_detection_count < MinimumHighConfidenceDetections) {
-                    image sideways{input};
-                    sideways.rotate(90);
-                    auto sideways_lines = recognise(sideways);
+                populate(best, recognise(input));
+                if (!needs_rotation_retry(best)) return best;
+
+                for (const int rotation: {90, 270}) {
+                    image rotated_input{input};
+                    rotated_input.rotate(rotation);
                     identity candidate;
-                    candidate.rotation_ = 90;
+                    candidate.rotation_ = rotation;
                     candidate.faces_ = best.faces_;
                     candidate.face_detection_performed_ = face_detection;
-                    populate(candidate, sideways_lines);
-
-                    if (candidate.has_id_number() && sideways_lines.size() > best_detection_count) {
-                        return candidate;
-                    }
-                    if (!best.has_id_number() && sideways_lines.size() > best_detection_count) {
-                        best = std::move(candidate);
-                    }
-                }
-                if (best.has_id_number()) return best;
-
-                image upside_down{input};
-                upside_down.rotate(180);
-                identity rotated;
-                populate(rotated, recognise(upside_down));
-                if (rotated.has_id_number()) {
-                    rotated.rotation_ = 180;
-                    rotated.faces_ = std::move(best.faces_);
-                    rotated.face_detection_performed_ = face_detection;
-                    return rotated;
+                    populate(candidate, recognise(rotated_input));
+                    if (quality(candidate) > quality(best)) best = std::move(candidate);
                 }
                 return best;
             }
 
         private:
+            static bool needs_rotation_retry(const identity &result) {
+                return !result.has_id_number() || result.names_.empty() || result.surname_.empty();
+            }
+
+            static int quality(const identity &result) {
+                int score = result.checks_.score() * 10;
+                score += result.has_id_number() ? 1000 : 0;
+                for (const auto *field: {
+                         &result.surname_, &result.names_, &result.date_of_birth_, &result.sex_,
+                         &result.nationality_, &result.country_of_birth_, &result.status_,
+                         &result.passport_number_, &result.date_of_issue_, &result.date_of_expiry_
+                     }) {
+                    if (!field->empty()) ++score;
+                }
+                return score;
+            }
+
             static void populate(identity &result, const vector<text_line> &lines) {
                 const auto mrz = find_mrz(lines);
-                const auto printed = find_id_number(lines);
+                const auto labelled = find_labelled_id_number(lines);
+                const auto printed = labelled ? labelled : find_id_number(lines);
 
                 result.document_ = classify(lines, mrz.has_value());
 
@@ -583,10 +604,11 @@ namespace sc {
                     result.id_number_ = printed->number;
                     result.ocr_confidence_ = printed->confidence;
                 }
-                if (result.id_number_.empty()) return;
 
-                result.checks_.luhn = true; // nothing reaches here without it
-                result.date_of_birth_ = identity::id_date_of_birth(result.id_number_);
+                if (!result.id_number_.empty()) {
+                    result.checks_.luhn = true; // nothing reaches here without it
+                    result.date_of_birth_ = identity::id_date_of_birth(result.id_number_);
+                }
                 if (mrz) {
                     if (const auto names = find_mrz_line1(lines, mrz->line_index)) {
                         result.surname_ = names->surname;
@@ -594,7 +616,7 @@ namespace sc {
                     }
                 }
                 read_fields(result, lines);
-                cross_check(result, lines, mrz.has_value());
+                if (!result.id_number_.empty()) cross_check(result, lines, mrz.has_value());
             }
 
             static double mrz_line_confidence(const vector<text_line> &lines) {
@@ -642,36 +664,75 @@ namespace sc {
                 const auto set_if_empty = [](string &field, const string &value) {
                     if (field.empty() && !value.empty()) field = value;
                 };
+                const auto is_name_value = [](const string &value) {
+                    const string packed = keep_alnum(value);
+                    return packed.size() >= 3 && packed != "IDN" && packed != "IDNO" && !is_caption(packed);
+                };
 
-                set_if_empty(result.surname_, clean_name(value_for_label(lines, {"SURNAME", "VAN"})));
-                set_if_empty(result.names_, clean_name(value_for_label(lines, {
-                                                                           "GIVENNAMES", "FORENAMES", "NAMES",
-                                                                           "VOORNAME", "PRENOMS"
-                                                                       })));
+                const string labelled_surname = clean_name(value_for_label(lines, {"SURNAME", "VAN"}));
+                const string labelled_names = clean_name(value_for_label(lines, {
+                                                                    "GIVENNAMES", "FORENAMES", "NAMES",
+                                                                    "VOORNAME", "PRENOMS"
+                                                                }));
+                if (is_name_value(labelled_surname)) set_if_empty(result.surname_, labelled_surname);
+                if (is_name_value(labelled_names)) set_if_empty(result.names_, labelled_names);
                 set_if_empty(result.nationality_, clean_name(value_for_label(lines, {"NATIONALIT"})));
-                set_if_empty(result.country_of_birth_,
-                             clean_name(value_for_label(lines, {
-                                                            "COUNTRYOFBIRTH", "PLACEOFBIRTH",
-                                                            "GEBOORTEDISTRIK"
-                                                        })));
+                const auto country_of_birth = clean_name(value_for_label(lines, {
+                                                               "COUNTRYOFBIRTH", "PLACEOFBIRTH",
+                                                               "GEBOORTEDISTRIK"
+                                                           }));
+                if (country_of_birth != "CITIZEN") set_if_empty(result.country_of_birth_, country_of_birth);
+                if (result.country_of_birth_.empty()) {
+                    const auto south_africa = ranges::find_if(lines, [](const text_line &line) {
+                        return line.alnum == "SOUTHAFRICA";
+                    });
+                    if (south_africa != lines.end()) {
+                        result.country_of_birth_ = "SOUTH AFRICA";
+                        set_if_empty(result.nationality_, result.country_of_birth_);
+                    }
+                }
                 set_if_empty(result.status_, clean_name(value_for_label(lines, {"STATUS"})));
                 set_if_empty(result.date_of_issue_,
                              parse_date(value_for_label(lines, {"DATEISSUED", "DATEOFISSUE", "DATUMUITGEREIK"})));
                 set_if_empty(result.date_of_expiry_,
                              parse_date(value_for_label(lines, {"DATEOFEXPIRY", "DATEEXPIRES"})));
+                set_if_empty(result.date_of_birth_,
+                             parse_date(value_for_label(lines, {"DATEOFBIRTH", "GEBOORTEDATUM", "DOB"})));
                 if (result.document_ == identity::document::id_card &&
                     (result.surname_.empty() || result.names_.empty())) {
                     const auto [surname, names] = nearby_unlabelled_names(lines);
                     set_if_empty(result.surname_, surname);
                     set_if_empty(result.names_, names);
                 }
+                if (result.document_ == identity::document::id_card &&
+                    (result.surname_.empty() || result.names_.empty())) {
+                    const auto [surname, names] = structured_card_names(lines);
+                    set_if_empty(result.surname_, surname);
+                    set_if_empty(result.names_, names);
+                }
                 if (result.surname_.empty() && !result.names_.empty() &&
                     result.document_ == identity::document::id_book)
                     result.surname_ = nearby_unlabelled_name(lines, result.names_);
+                if (result.surname_.empty() || result.names_.empty()) {
+                    const auto [surname, names] = generic_names(lines);
+                    set_if_empty(result.surname_, surname);
+                    set_if_empty(result.names_, names);
+                }
 
                 if (result.passport_number_.empty()) {
                     const string passport = keep_alnum(value_for_label(lines, {"PASSPORTNO"}));
                     if (passport.size() >= 8 && passport.size() <= 9) result.passport_number_ = passport;
+                }
+
+                // Last resort: only use an unlabelled date when no validated
+                // ID number or nearby birth-date caption has supplied one.
+                if (result.date_of_birth_.empty()) {
+                    for (const auto &line: lines) {
+                        if (const string date = parse_date(line.text); !date.empty()) {
+                            result.date_of_birth_ = date;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -723,6 +784,80 @@ namespace sc {
                 }
                 if (!best_surname || !best_names) return {};
                 return {clean_name(best_surname->text), clean_name(best_names->text)};
+            }
+
+            // Smart cards print given names before the surname in a compact
+            // row or column. This is deliberately after captions, so an
+            // arbitrary adjacent pair cannot replace a labelled field.
+            static pair<string, string> structured_card_names(const vector<text_line> &lines) {
+                const text_line *best_given = nullptr;
+                const text_line *best_surname = nullptr;
+                double best_score = numeric_limits<double>::infinity();
+                for (const auto &given: lines) {
+                    const string given_text = clean_name(given.text);
+                    if (given_text.size() < 3 || is_caption(given.alnum)) continue;
+                    for (const auto &surname: lines) {
+                        const string surname_text = clean_name(surname.text);
+                        if (&given == &surname || surname_text.size() < 3 || is_caption(surname.alnum))
+                            continue;
+
+                        const double height = max(1.0, max(given.box.height(), surname.box.height()));
+                        const double center_y_gap = std::abs((given.box.top() + given.box.height() / 2) -
+                                                             (surname.box.top() + surname.box.height() / 2));
+                        const double horizontal_gap = max({
+                            0.0, given.box.left() - surname.box.right(),
+                            surname.box.left() - given.box.right()
+                        });
+                        const bool same_row = surname.box.left() >= given.box.left() &&
+                                              center_y_gap <= height;
+                        const bool next_row = surname.box.top() >= given.box.top() &&
+                                              horizontal_gap <= height * 2;
+                        if (!same_row && !next_row) continue;
+
+                        const double score = same_row
+                                                 ? surname.box.left() - given.box.left() + center_y_gap
+                                                 : surname.box.top() - given.box.top() + horizontal_gap;
+                        if (score >= best_score) continue;
+                        best_score = score;
+                        best_given = &given;
+                        best_surname = &surname;
+                    }
+                }
+                if (!best_given || !best_surname) return {};
+                return {clean_name(best_given->text), clean_name(best_surname->text)};
+            }
+
+            static pair<string, string> generic_names(const vector<text_line> &lines) {
+                const auto word_count = [](const string &value) {
+                    size_t count{};
+                    bool in_word = false;
+                    for (const unsigned char c: value) {
+                        if (isalpha(c)) {
+                            if (!in_word) ++count;
+                            in_word = true;
+                        } else {
+                            in_word = false;
+                        }
+                    }
+                    return count;
+                };
+
+                vector<string> candidates;
+                for (const auto &line: lines) {
+                    const string name = clean_name(line.text);
+                    if (name.size() < 4 || is_caption(line.alnum) || word_count(name) > 3)
+                        continue;
+                    candidates.push_back(name);
+                }
+                if (candidates.size() < 2) return {};
+                const auto names = ranges::find_if(candidates, [&word_count](const string &value) {
+                    return word_count(value) > 1;
+                });
+                if (names == candidates.end()) return {candidates[1], candidates[0]};
+                const auto surname = ranges::find_if(candidates, [&names](const string &value) {
+                    return &value != &*names && value.find(' ') == string::npos;
+                });
+                return {surname == candidates.end() ? string{} : *surname, *names};
             }
 
             static string nearby_unlabelled_name(const vector<text_line> &lines, const string &names) {
