@@ -26,7 +26,7 @@ namespace sc {
                 : type(static_cast<int>(data[5])),
                   confidence(data[4], 1),
                   box(rect::ltrb(data[0], data[1], data[2], data[3])) {
-                box -= img.padding();
+                box -= static_cast<point_i>(img.padding());
                 box /= img.cropped_size();
             }
 
