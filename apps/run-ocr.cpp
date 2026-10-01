@@ -40,7 +40,7 @@ int main() {
         cout << sw << " Got images " << endl;
         sw.reset();
         auto txt = rec.recognize(result);
-        cout << sw << " Got inference " << endl;
+        cout << sw << " Got inference " << txt[0].text << endl;
         sw.reset();
 
         //     if (region.left() < 5) continue; // Probable cut off words
