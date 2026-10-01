@@ -7,7 +7,13 @@
 
 using namespace std;
 
+#ifdef __APPLE__
 const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/"};
+#else
+const filesystem::path image_path{"/var/www/build/sc-ai/tests/resource/test/"};
+#endif
+
+
 const string query{
     R"(insert into truckassist.id_embedding
          (file, number, confidence, type, id_number, passport, names, surname, embedding)
@@ -21,8 +27,8 @@ int main() {
     sc::timer sw;
 
     for (const auto &file: filesystem::directory_iterator(image_path)) {
-        // if (file.path().filename() != "ID-38b.jpg") continue;
-        // if (file.path().filename() != "ID-38.jpg") continue;
+        // if (file.path().filename() != "ID-10.jpg") continue;
+         // if (file.path().filename() != "ID-38.jpg") continue;
         // if (file.path().filename() != "d1333 id.jpg") continue;
         // Could not find the ID "ID-10.jpg"")
         if (!file.is_regular_file()) continue;

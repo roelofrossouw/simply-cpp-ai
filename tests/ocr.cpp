@@ -24,6 +24,36 @@ int main() {
         for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
     }
 
+    SECTION("Detects regions and recognises extracted text");
+    {
+        const sc::image input{"resource/test/ID-10.jpg"};
+        sc::ocr_detector detector;
+        const auto regions = detector.detect(input);
+        CHECK(!regions.empty());
+        for (const auto &region: regions) {
+            CHECK(region.width() > 0);
+            CHECK(region.height() > 0);
+        }
+
+        const auto text_images = detector.text_images(input, regions);
+        CHECK_EQ(text_images.size(), regions.size());
+        for (const auto &text_image: text_images) CHECK(!text_image.empty());
+
+        const auto detected_images = detector.text_images(input);
+        CHECK_EQ(detected_images.size(), regions.size());
+
+        sc::ocr_recognizer recognizer;
+        const auto recognised = recognizer.recognize(text_images);
+        CHECK_EQ(recognised.size(), text_images.size());
+        CHECK(std::ranges::any_of(recognised, [](const sc::ocr_recognizer::result &result) {
+            return !result.text.empty();
+        }));
+        for (const auto &result: recognised) {
+            CHECK(result.confidence >= 0);
+            CHECK(result.confidence <= 100);
+        }
+    }
+
     SECTION("Rejects missing input");
     {
         sc::ocr reader;

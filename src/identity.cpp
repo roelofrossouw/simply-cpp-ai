@@ -273,10 +273,44 @@ namespace sc {
             }
         };
 
+        // The first TD3 MRZ line contains the holder's name. The second
+        // document-type character is deliberately not validated: OCR commonly
+        // misreads its filler '<', while the issuing country and name separator
+        // remain stable.
+        struct mrz_line1 {
+            static constexpr size_t length = 44;
+
+            string surname;
+            string names;
+
+            bool parse(const string_view raw) {
+                if (raw.size() != length || raw[0] != 'P') return false;
+                if (!ranges::all_of(raw.substr(2, 3), [](const unsigned char c) { return isalpha(c); }))
+                    return false;
+
+                const string_view name_field = raw.substr(5);
+                const size_t separator = name_field.find("<<");
+                if (separator == string_view::npos) return false;
+                const auto decode_name = [](string value) {
+                    ranges::replace(value, '<', ' ');
+                    return clean_name(value);
+                };
+                surname = decode_name(string{name_field.substr(0, separator)});
+                names = decode_name(string{name_field.substr(separator + 2)});
+                return !surname.empty() && !names.empty();
+            }
+        };
+
+        struct mrz_result {
+            mrz_line2 line2;
+            size_t line_index;
+        };
+
         // Finds a usable MRZ second line anywhere in the recognised text.
-        static optional<mrz_line2> find_mrz(const vector<text_line> &lines) {
-            optional<mrz_line2> best;
-            for (const auto &line: lines) {
+        static optional<mrz_result> find_mrz(const vector<text_line> &lines) {
+            optional<mrz_result> best;
+            for (size_t line_index = 0; line_index < lines.size(); ++line_index) {
+                const auto &line = lines[line_index];
                 string window;
                 window.reserve(line.packed.size());
                 for (const unsigned char c: upper(line.packed)) {
@@ -287,8 +321,41 @@ namespace sc {
                     mrz_line2 candidate;
                     if (!candidate.parse(string_view{window}.substr(start, mrz_line2::length))) continue;
                     if (!identity::valid_id_number(candidate.personal_number)) continue;
-                    if (candidate.composite_valid) return candidate; // fully verified, stop looking
-                    if (!best) best = candidate;
+                    mrz_result result{std::move(candidate), line_index};
+                    if (result.line2.composite_valid) return result; // fully verified, stop looking
+                    if (!best) best = std::move(result);
+                }
+            }
+            return best;
+        }
+
+        static optional<mrz_line1> find_mrz_line1(const vector<text_line> &lines, const size_t line2_index) {
+            const auto &line2 = lines[line2_index];
+            optional<mrz_line1> best;
+            double best_score = numeric_limits<double>::infinity();
+            for (const auto &line: lines) {
+                string window;
+                window.reserve(line.packed.size());
+                for (const unsigned char c: upper(line.packed)) {
+                    if (isalnum(c) || c == '<') window += static_cast<char>(c);
+                }
+                if (window.size() < mrz_line1::length) continue;
+
+                const double vertical_gap = line2.box.top() - line.box.bottom();
+                const double horizontal_gap = max({
+                    0.0, line.box.left() - line2.box.right(), line2.box.left() - line.box.right()
+                });
+                const double max_gap = max(line.box.height(), line2.box.height()) * 3;
+                if (vertical_gap < -line2.box.height() || vertical_gap > max_gap || horizontal_gap > max_gap)
+                    continue;
+
+                for (size_t start = 0; start + mrz_line1::length <= window.size(); ++start) {
+                    mrz_line1 candidate;
+                    if (!candidate.parse(string_view{window}.substr(start, mrz_line1::length))) continue;
+                    const double score = max(0.0, vertical_gap) + horizontal_gap;
+                    if (score >= best_score) continue;
+                    best_score = score;
+                    best = std::move(candidate);
                 }
             }
             return best;
@@ -505,12 +572,12 @@ namespace sc {
                 result.document_ = classify(lines, mrz.has_value());
 
                 if (mrz) {
-                    result.id_number_ = mrz->personal_number;
+                    result.id_number_ = mrz->line2.personal_number;
                     result.checks_.mrz = true;
-                    result.passport_number_ = mrz->passport_number;
-                    result.date_of_expiry_ = mrz->date_of_expiry;
-                    result.sex_ = mrz->sex;
-                    result.nationality_ = mrz->nationality;
+                    result.passport_number_ = mrz->line2.passport_number;
+                    result.date_of_expiry_ = mrz->line2.date_of_expiry;
+                    result.sex_ = mrz->line2.sex;
+                    result.nationality_ = mrz->line2.nationality;
                     result.ocr_confidence_ = mrz_line_confidence(lines);
                 } else if (printed) {
                     result.id_number_ = printed->number;
@@ -520,6 +587,12 @@ namespace sc {
 
                 result.checks_.luhn = true; // nothing reaches here without it
                 result.date_of_birth_ = identity::id_date_of_birth(result.id_number_);
+                if (mrz) {
+                    if (const auto names = find_mrz_line1(lines, mrz->line_index)) {
+                        result.surname_ = names->surname;
+                        result.names_ = names->names;
+                    }
+                }
                 read_fields(result, lines);
                 cross_check(result, lines, mrz.has_value());
             }

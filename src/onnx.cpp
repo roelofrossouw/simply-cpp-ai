@@ -38,7 +38,7 @@ namespace sc {
         public:
             Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-            onnx_impl(const std::string &Model) : model_filename(Model) {
+            onnx_impl(const std::string &Model, const bool use_metal) : model_filename(Model) {
                 if (!fs::exists(model_filename)) {
                     if (fs::exists(model_filename.string() + ".onnx"))
                         model_filename += ".onnx";
@@ -51,7 +51,9 @@ namespace sc {
 
 #ifdef __APPLE__
                 // Add CoreML provider
-                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
+                if (use_metal) {
+                    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
+                }
 #else
                 const auto providers = Ort::GetAvailableProviders();
                 const auto cuda = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider");
@@ -76,7 +78,12 @@ namespace sc {
                 std::cerr << "Loading model " << model_filename << std::endl;
 #endif
 
+                // options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                // options.SetIntraOpNumThreads(10);
+
                 session = new Ort::Session(env, model_filename.string().c_str(), options);
+
+
                 for (const auto &val: session->GetInputs())
                     inputs.emplace_back(val.GetName().c_str(), val.TypeInfo().GetTensorTypeAndShapeInfo().GetShape());
                 for (const auto &val: session->GetOutputs())
@@ -91,9 +98,6 @@ namespace sc {
             ~onnx_impl() { delete session; }
 
             std::vector<output> run(const val &inputTensor) {
-#ifndef NDEBUG
-                sc::timer sw;
-#endif
                 results = session->Run(run_options,
                                        input_names.data(),
                                        &inputTensor,
@@ -104,9 +108,6 @@ namespace sc {
                 data.reserve(results.size());
                 for (auto &result: results)
                     data.emplace_back(result.GetTensorTypeAndShapeInfo().GetShape(), result.GetTensorData<float>());
-#ifndef NDEBUG
-                std::cerr << "Inference " << model_filename << " - " << sw << std::endl;
-#endif
 
                 return data;
             }
@@ -225,7 +226,7 @@ namespace sc {
         };
     }
 
-    onnx::onnx(const std::string &model) : impl(new impl::onnx_impl(model)) {
+    onnx::onnx(const std::string &model, const bool use_metal) : impl(new impl::onnx_impl(model, use_metal)) {
     }
 
     onnx::~onnx() { delete impl; }

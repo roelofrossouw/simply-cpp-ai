@@ -86,6 +86,15 @@ int main() {
         CHECK_EQ(passport.sex(), sc::identity::id_sex(passport.id_number()));
     }
 
+    SECTION("Reading passport names from the MRZ");
+    {
+        const sc::identity passport{"resource/test/D1249 - MJ Mcameni - Paspoort 01.03.2031.jpg"};
+        CHECK(passport.has_id_number());
+        CHECK(passport.document_type() == sc::identity::document::passport);
+        CHECK_EQ(passport.surname(), string{"MCAMENI"});
+        CHECK_EQ(passport.names(), string{"MTHUTHUZELI JULY"});
+    }
+
     SECTION("Reading a smart ID card");
     {
         const sc::image input{"resource/test/ID-33.jpg"};

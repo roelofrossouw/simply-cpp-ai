@@ -32,13 +32,19 @@ namespace sc {
             return static_cast<int>(std::max_element(data, data + data_size()) - data);
         }
 
+        friend std::ostream &operator <<(std::ostream &os, const output &rhs) {
+            os << "[";
+            for (const auto s: rhs.shape) os << " " << s;
+            return os << " ]";
+        }
+
         std::vector<int64_t> shape;
         float *data;
     };
 
     class onnx {
     public:
-        explicit onnx(const std::string &model);
+        explicit onnx(const std::string &model, bool use_metal = true);
 
         ~onnx();
 

@@ -106,9 +106,9 @@ namespace sc {
                 const double scale_y = static_cast<double>(detector_input.size().height()) / map_size.height() *
                                        original.size().height() / content.height();
                 const double center_x = (bounds.center().x() * detector_input.size().width() / map_size.width() -
-                                         padding.x()) * original.size().width() / content.width();
+                                         padding.width()) * original.size().width() / content.width();
                 const double center_y = (bounds.center().y() * detector_input.size().height() / map_size.height() -
-                                         padding.y()) * original.size().height() / content.height();
+                                         padding.height()) * original.size().height() / content.height();
                 const double angle = bounds.angle() * std::numbers::pi / 180.0;
                 const double width_scale = std::hypot(std::cos(angle) * scale_x, std::sin(angle) * scale_y);
                 const double height_scale = std::hypot(std::sin(angle) * scale_x, std::cos(angle) * scale_y);
@@ -126,18 +126,18 @@ namespace sc {
                     normalized_angle(mapped_angle)
                 };
             }
+
+            void validate_minimum_confidence(const double minimum_confidence) {
+                if (!std::isfinite(minimum_confidence) || minimum_confidence < 0 || minimum_confidence > 100)
+                    throw std::invalid_argument{"OCR minimum confidence must be finite and between 0 and 100"};
+            }
         }
 
-        class ocr_impl {
+        class ocr_detector_impl {
         public:
-            ocr_impl(const std::string &detection_model, const std::string &recognition_model,
-                     const fs::path &dictionary)
-                : detector(detection_model),
-                  recognizer(recognition_model),
-                  characters(load_dictionary(find_dictionary(recognition_model, dictionary))) {
+            explicit ocr_detector_impl(const std::string &model) : detector(model, false) {
 #ifndef NDEBUG
                 detector.show_shapes();
-                recognizer.show_shapes();
 #endif
             }
 
@@ -157,18 +157,10 @@ namespace sc {
                 maximum_height_difference_ = difference;
             }
 
-            void run(const fs::path &image_path, const double minimum_confidence) {
-                validate_minimum_confidence(minimum_confidence);
-                const image input{image_path.string()};
-                run(input, minimum_confidence);
-            }
-
-            void run(const image &input, const double minimum_confidence) {
-                validate_minimum_confidence(minimum_confidence);
-                lines_.clear();
-                original = std::make_unique<image>(input);
-                image detector_input{*original};
-                detector_input.snap_to_size(64, {detector_input.size()});
+            [[nodiscard]] std::vector<rotated_rect> detect(const image &input) const {
+                if (input.empty()) throw std::invalid_argument{"Cannot detect text in an empty image"};
+                image detector_input{input};
+                detector_input.snap_to_size(32, {detector_input.size()});
 
                 const auto outputs = detector.process_image(detector_input);
                 if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
@@ -185,117 +177,84 @@ namespace sc {
                 auto rectangles = probability_map.find_min_area_rects(500);
                 rectangles = likely_text_rectangles(rectangles, minimum_neighbors_, maximum_height_difference_);
 
-                const auto padding = detector_input.padding();
-                const auto content = detector_input.cropped_size();
-                std::vector<rotated_rect> source_rectangles;
-                source_rectangles.reserve(rectangles.size());
+                std::vector<rotated_rect> result;
+                result.reserve(rectangles.size());
                 for (const auto &bounds: rectangles) {
-                    const auto mapped = map_to_original(bounds, detector_input, *original, map_size);
-                    source_rectangles.emplace_back(
+                    const auto mapped = map_to_original(bounds, detector_input, input, map_size);
+                    result.emplace_back(
                         mapped.center(),
-                        size{mapped.width() * 1.05, mapped.height() * 1.5},
+                        size{mapped.width() + mapped.height() * 2, mapped.height() * 2},
                         mapped.angle());
                 }
-                std::ranges::sort(source_rectangles, [](const rotated_rect &lhs, const rotated_rect &rhs) {
+                std::ranges::sort(result, [](const rotated_rect &lhs, const rotated_rect &rhs) {
                     const auto lhs_box = static_cast<rect>(lhs);
                     const auto rhs_box = static_cast<rect>(rhs);
                     if (lhs_box.top() != rhs_box.top()) return lhs_box.top() < rhs_box.top();
                     return lhs_box.left() < rhs_box.left();
                 });
-
-                std::vector<image> word_images;
-                word_images.reserve(source_rectangles.size());
-                for (const auto &bounds: source_rectangles) {
-                    auto word_image = original->deskewed(bounds);
-                    word_image.resize_to({0, 48});
-                    word_images.push_back(std::move(word_image));
-                }
-                if (word_images.empty()) return;
-
-                const auto recognition_outputs = recognizer.process_images(word_images);
-                if (recognition_outputs.size() != 1 ||
-                    recognition_outputs.front().shape.size() != 3 ||
-                    recognition_outputs.front().shape[0] != static_cast<int64_t>(word_images.size()))
-                    throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
-                for (size_t i = 0; i < source_rectangles.size(); ++i) {
-                    const auto recognized = decode(recognition_outputs, i);
-                    if (recognized.text.empty() || recognized.confidence * 100.0 < minimum_confidence) continue;
-                    lines_.push_back({recognized.text, {recognized.confidence * 100.0, 2},
-                                      static_cast<rect>(source_rectangles[i])});
-                }
-            }
-
-            [[nodiscard]] nlohmann::ordered_json json() const {
-                nlohmann::ordered_json result = nlohmann::ordered_json::array();
-                for (const auto &line: lines_) {
-                    result.push_back({
-                        {"text", line.text},
-                        {"confidence", static_cast<double>(line.confidence)},
-                        {"box", {
-                            {"x", line.box.left()},
-                            {"y", line.box.top()},
-                            {"width", line.box.width()},
-                            {"height", line.box.height()}
-                        }}
-                    });
-                }
                 return result;
-            }
-
-            [[nodiscard]] std::string text() const {
-                std::string result;
-                for (const auto &line: lines_) {
-                    if (!result.empty()) result += '\n';
-                    result += line.text;
-                }
-                return result;
-            }
-
-            [[nodiscard]] image annotated() const {
-                if (!original) throw std::runtime_error{"No image has been detected"};
-                image result{*original};
-                for (const auto &line: lines_) {
-                    result.rect(line.box);
-                    result.text(line.text, {static_cast<int>(line.box.left()),
-                                            std::max(20, static_cast<int>(line.box.top()) - 5)});
-                }
-                return result;
-            }
-
-            [[nodiscard]] const std::vector<ocr::line> &lines() const noexcept {
-                return lines_;
             }
 
         private:
-            static void validate_minimum_confidence(const double minimum_confidence) {
-                if (!std::isfinite(minimum_confidence) || minimum_confidence < 0 || minimum_confidence > 100)
-                    throw std::invalid_argument{"OCR minimum confidence must be finite and between 0 and 100"};
+            onnx detector;
+            percent threshold_{50, 2};
+            size_t minimum_neighbors_{5};
+            double maximum_height_difference_{30};
+        };
+
+        class ocr_recognizer_impl {
+        public:
+            ocr_recognizer_impl(const std::string &model, const fs::path &dictionary)
+                : recognizer(model, false),
+                  characters(load_dictionary(find_dictionary(model, dictionary))) {
+#ifndef NDEBUG
+                recognizer.show_shapes();
+#endif
             }
 
-            struct decoded_text {
-                std::string text;
-                double confidence{};
-            };
+            [[nodiscard]] ocr_recognizer::result recognize(const image &input) const {
+                if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
+                image resized{input};
+                resized.resize_to({0, 48});
+                return decode(recognizer.process_image(resized));
+            }
 
-            [[nodiscard]] decoded_text decode(const std::vector<output> &outputs,
-                                              const size_t batch_index = 0) const {
+            [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image> &inputs) const {
+                if (inputs.empty()) return {};
+                std::vector<image> resized;
+                resized.reserve(inputs.size());
+                for (const auto &input: inputs) {
+                    if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
+                    auto &text_image = resized.emplace_back(input);
+                    text_image.resize_to({0, 48});
+                }
+                const auto outputs = recognizer.process_images(resized);
+                if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
+                    outputs.front().shape[0] != static_cast<int64_t>(resized.size()))
+                    throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
+
+                std::vector<ocr_recognizer::result> result;
+                result.reserve(resized.size());
+                for (size_t i = 0; i < resized.size(); ++i) result.push_back(decode(outputs, i));
+                return result;
+            }
+
+        private:
+            [[nodiscard]] ocr_recognizer::result decode(const std::vector<output> &outputs,
+                                                        const size_t batch_index = 0) const {
                 if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
                     outputs.front().shape[0] <= static_cast<int64_t>(batch_index) ||
-                    outputs.front().shape[1] <= 0 ||
-                    outputs.front().shape[2] <= 0)
+                    outputs.front().shape[1] <= 0 || outputs.front().shape[2] <= 0)
                     throw std::runtime_error{
-                        "PaddleOCR recognition model must return a [batch, time, classes] tensor"};
+                        "PaddleOCR recognition model must return a [batch, time, classes] tensor"
+                    };
 
                 const auto &output = outputs.front();
                 const auto timesteps = static_cast<int>(output.shape[1]);
                 const auto classes = static_cast<int>(output.shape[2]);
                 const auto character_size = characters.size();
-                if (static_cast<size_t>(classes) > characters.size())
-                    throw std::runtime_error{
-                        "OCR dictionary has " + std::to_string(characters.size()) +
-                        " entries but the recognition model has " + std::to_string(classes) + " classes"};
 
-                decoded_text result;
+                ocr_recognizer::result result;
                 double confidence_sum{};
                 int recognized_characters{};
                 int previous_class{};
@@ -335,8 +294,6 @@ namespace sc {
                     std::ranges::sort(nonzero_gaps);
                     typical_gap = nonzero_gaps[nonzero_gaps.size() / 2];
                 }
-                // Infer spacing only for alphabetic runs; large CTC blanks in digits and mixed text
-                // are common within tokens and otherwise create spurious separators.
                 const size_t word_gap = std::max<size_t>(9, typical_gap * 3);
                 const bool alphabetic = std::ranges::all_of(decoded_classes, [this](const int class_index) {
                     return std::ranges::all_of(characters[class_index], [](const unsigned char c) {
@@ -349,19 +306,165 @@ namespace sc {
                         result.text += ' ';
                     result.text += characters[decoded_classes[i]];
                 }
-                if (recognized_characters) result.confidence = confidence_sum / recognized_characters;
+                if (recognized_characters) result.confidence = {confidence_sum / recognized_characters * 100.0, 2};
                 return result;
             }
 
-            onnx detector;
             onnx recognizer;
             std::vector<std::string> characters;
+        };
+
+        class ocr_impl {
+        public:
+            ocr_impl(const std::string &detection_model, const std::string &recognition_model,
+                     const fs::path &dictionary)
+                : detector(detection_model), recognizer(recognition_model, dictionary) {
+            }
+
+            void set_threshold(const double threshold) {
+                detector.set_threshold(threshold);
+            }
+
+            void set_minimum_neighbors(const size_t minimum_neighbors) {
+                detector.set_minimum_neighbors(minimum_neighbors);
+            }
+
+            void set_maximum_height_difference(const double difference) {
+                detector.set_maximum_height_difference(difference);
+            }
+
+            void run(const fs::path &image_path, const double minimum_confidence) {
+                validate_minimum_confidence(minimum_confidence);
+                const image input{image_path.string()};
+                run(input, minimum_confidence);
+            }
+
+            void run(const image &input, const double minimum_confidence) {
+                validate_minimum_confidence(minimum_confidence);
+                lines_.clear();
+                original = std::make_unique<image>(input);
+                const auto regions = detector.detect(*original);
+                const auto text_images = detector.text_images(*original, regions);
+                for (size_t i = 0; i < regions.size(); ++i) {
+                    const auto recognized = recognizer.recognize(text_images[i]);
+                    if (recognized.text.empty() || recognized.confidence < minimum_confidence) continue;
+                    lines_.push_back({
+                        recognized.text, recognized.confidence, static_cast<rect>(regions[i])
+                    });
+                }
+            }
+
+            [[nodiscard]] nlohmann::ordered_json json() const {
+                nlohmann::ordered_json result = nlohmann::ordered_json::array();
+                for (const auto &line: lines_) {
+                    result.push_back({
+                        {"text", line.text},
+                        {"confidence", static_cast<double>(line.confidence)},
+                        {
+                            "box", {
+                                {"x", line.box.left()},
+                                {"y", line.box.top()},
+                                {"width", line.box.width()},
+                                {"height", line.box.height()}
+                            }
+                        }
+                    });
+                }
+                return result;
+            }
+
+            [[nodiscard]] std::string text() const {
+                std::string result;
+                for (const auto &line: lines_) {
+                    if (!result.empty()) result += '\n';
+                    result += line.text;
+                }
+                return result;
+            }
+
+            [[nodiscard]] image annotated() const {
+                if (!original) throw std::runtime_error{"No image has been detected"};
+                image result{*original};
+                for (const auto &line: lines_) {
+                    result.rect(line.box);
+                    result.text(line.text, {
+                                    static_cast<int>(line.box.left()),
+                                    std::max(20, static_cast<int>(line.box.top()) - 5)
+                                });
+                }
+                return result;
+            }
+
+            [[nodiscard]] const std::vector<ocr::line> &lines() const noexcept {
+                return lines_;
+            }
+
+        private:
+            ocr_detector detector;
+            ocr_recognizer recognizer;
             std::unique_ptr<image> original;
             std::vector<ocr::line> lines_;
-            percent threshold_{50, 2};
-            size_t minimum_neighbors_{5};
-            double maximum_height_difference_{30};
         };
+    }
+
+    ocr_detector::ocr_detector(const std::string &model) : impl(new impl::ocr_detector_impl(model)) {
+    }
+
+    ocr_detector::~ocr_detector() {
+        delete impl;
+    }
+
+    void ocr_detector::set_threshold(const double threshold) {
+        impl->set_threshold(threshold);
+    }
+
+    void ocr_detector::set_minimum_neighbors(const size_t minimum_neighbors) {
+        impl->set_minimum_neighbors(minimum_neighbors);
+    }
+
+    void ocr_detector::set_maximum_height_difference(const double maximum_height_difference) {
+        impl->set_maximum_height_difference(maximum_height_difference);
+    }
+
+    std::vector<rotated_rect> ocr_detector::detect(const fs::path &image_path) const {
+        return detect(image{image_path.string()});
+    }
+
+    std::vector<rotated_rect> ocr_detector::detect(const image &input) const {
+        return impl->detect(input);
+    }
+
+    std::vector<image> ocr_detector::text_images(const image &input,
+                                                 const std::vector<rotated_rect> &regions) const {
+        if (input.empty()) throw std::invalid_argument{"Cannot extract text from an empty image"};
+        std::vector<image> result;
+        result.reserve(regions.size());
+        for (const auto &region: regions) result.push_back(input.deskewed(region));
+        return result;
+    }
+
+    std::vector<image> ocr_detector::text_images(const fs::path &image_path) const {
+        return text_images(image{image_path.string()});
+    }
+
+    std::vector<image> ocr_detector::text_images(const image &input) const {
+        return text_images(input, detect(input));
+    }
+
+    ocr_recognizer::ocr_recognizer(const std::string &model, const fs::path &dictionary)
+        : impl(new impl::ocr_recognizer_impl(model, dictionary)) {
+    }
+
+    ocr_recognizer::~ocr_recognizer() {
+        delete impl;
+    }
+
+    ocr_recognizer::result ocr_recognizer::recognize(const image &input) const {
+        return impl->recognize(input);
+    }
+
+    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image> &inputs) const {
+        return impl->recognize(inputs);
     }
 
     ocr::ocr(const std::string &detection_model, const std::string &recognition_model,
