@@ -1,7 +1,7 @@
 #include <sc.h>
 
 #include "identity.h"
-#include <postgres.h>
+#include <sc_postgres.h>
 
 #include "ocr.h"
 
