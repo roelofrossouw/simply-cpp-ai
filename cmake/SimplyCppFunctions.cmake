@@ -23,7 +23,7 @@ elseif (UNIX)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif ()
 
-set(SC_HELPERS_VERSION 18)
+set(SC_HELPERS_VERSION 19)
 set(SC_VERSION_FILE "VERSION.txt")
 set(SC_VERSION_DEFAULT "1.0.0")
 
@@ -403,7 +403,6 @@ endfunction()
 # Set Debian runtime/dev dependency metadata for the generated package.
 function(package_sc_module)
     cmake_parse_arguments(ARG "" "" "DEPENDS;DEV_DEPENDS" ${ARGN})
-    # cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
     if (APPLE)
         set(CODENAME apple)
         set(CPACK_GENERATOR "TGZ")

@@ -6,7 +6,11 @@
 using namespace std;
 using namespace sc;
 
+#ifdef __APPLE__
 const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/"};
+#else
+const filesystem::path image_path{"/var/www/build/sc-ai/tests/resource/test/"};
+#endif
 
 int main() {
     ocr ocr;
@@ -25,7 +29,7 @@ int main() {
         ocr.detect(img);
         cout << sw << " Done OCR " << endl;
         sw.reset();
-        cout << ocr << endl;
+        cout << ocr.to_json().dump(4) << endl;
         cout << sw << " Done " << endl;
         if (!img.show()) break;
     }
