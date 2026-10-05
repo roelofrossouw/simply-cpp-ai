@@ -116,6 +116,8 @@ namespace sc {
         operator std::string() const;
         friend std::ostream &operator<<(std::ostream &lhs, const identity &rhs);
 
+        std::string all_text();
+
         /// True when a string is thirteen digits forming a structurally valid
         /// South African identity number: plausible birth date, a citizenship
         /// digit of 0 or 1, and a correct Luhn check digit.
@@ -148,6 +150,7 @@ namespace sc {
         std::string date_of_expiry_;
         std::vector<face> faces_;
         bool face_detection_performed_{};
+        std::vector<std::string> raw_text_;
 
         friend class impl::identity_reader;
     };

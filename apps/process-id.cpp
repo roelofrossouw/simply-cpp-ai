@@ -23,7 +23,7 @@ const string query{
 };
 
 int main() {
-    const sc::postgres dev("devdb", "1web", "www");
+    const sc::postgres dev("db3", "1web", "www");
     sc::timer sw;
 
     for (const auto &file: filesystem::directory_iterator(image_path)) {
@@ -35,6 +35,7 @@ int main() {
         sc::identity id(file, true);
         if (!id.has_id_number()) {
             cerr << "Could not find the ID " << file.path().filename() << endl;
+            cerr << "Info: " << id.all_text() << endl;
             continue;
         }
         cout << sw

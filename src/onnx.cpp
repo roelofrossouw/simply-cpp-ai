@@ -66,7 +66,7 @@ namespace sc {
                     }
                 } else if (cuda != providers.end()) {
                     std::cerr << "CUDA execution provider found, but libcublasLt is unavailable; "
-                            "using the default provider\n";
+                            "using the default provider\n(Consider installing cuda-toolkit-13-4 to enable GPU usage)";
                 }
                 options.SetIntraOpNumThreads(4);
                 options.SetInterOpNumThreads(1);

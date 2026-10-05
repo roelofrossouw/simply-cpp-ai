@@ -379,8 +379,8 @@ namespace sc {
                    value.find("IDENTITEITSDOKUMENT") != string::npos ||
                    value.find("ADRESVERANDERING") != string::npos || value.find("GEREGISTREERDE") != string::npos ||
                    ranges::any_of(CAPTIONS, [&value](const string_view caption) {
-                return value.find(caption) != string::npos;
-            });
+                       return value.find(caption) != string::npos;
+                   });
         }
 
         // -------------------------------------------------------- field labels
@@ -541,6 +541,7 @@ namespace sc {
                 return read(input, face_detection);
             }
 
+
             static identity read(const image &input, const bool face_detection) {
                 if (input.empty()) throw invalid_argument{"Cannot read identity from an empty image"};
                 identity best;
@@ -586,6 +587,9 @@ namespace sc {
             }
 
             static void populate(identity &result, const vector<text_line> &lines) {
+                result.raw_text_.clear();
+                result.raw_text_.reserve(lines.size());
+                for (auto const &tl: lines) result.raw_text_.push_back(tl.text);
                 const auto mrz = find_mrz(lines);
                 const auto labelled = find_labelled_id_number(lines);
                 const auto printed = labelled ? labelled : find_id_number(lines);
@@ -671,16 +675,16 @@ namespace sc {
 
                 const string labelled_surname = clean_name(value_for_label(lines, {"SURNAME", "VAN"}));
                 const string labelled_names = clean_name(value_for_label(lines, {
-                                                                    "GIVENNAMES", "FORENAMES", "NAMES",
-                                                                    "VOORNAME", "PRENOMS"
-                                                                }));
+                                                                             "GIVENNAMES", "FORENAMES", "NAMES",
+                                                                             "VOORNAME", "PRENOMS"
+                                                                         }));
                 if (is_name_value(labelled_surname)) set_if_empty(result.surname_, labelled_surname);
                 if (is_name_value(labelled_names)) set_if_empty(result.names_, labelled_names);
                 set_if_empty(result.nationality_, clean_name(value_for_label(lines, {"NATIONALIT"})));
                 const auto country_of_birth = clean_name(value_for_label(lines, {
-                                                               "COUNTRYOFBIRTH", "PLACEOFBIRTH",
-                                                               "GEBOORTEDISTRIK"
-                                                           }));
+                                                                             "COUNTRYOFBIRTH", "PLACEOFBIRTH",
+                                                                             "GEBOORTEDISTRIK"
+                                                                         }));
                 if (country_of_birth != "CITIZEN") set_if_empty(result.country_of_birth_, country_of_birth);
                 if (result.country_of_birth_.empty()) {
                     const auto south_africa = ranges::find_if(lines, [](const text_line &line) {
@@ -1024,6 +1028,14 @@ namespace sc {
     optional<bool> identity::citizen() const {
         if (!has_id_number()) return nullopt;
         return id_number_[10] == '0';
+    }
+
+    string identity::all_text() {
+        string result;
+        for (const auto &text: raw_text_) {
+            result += text + "\n";
+        }
+        return result;
     }
 
     bool identity::valid_id_number(const string &number) {
