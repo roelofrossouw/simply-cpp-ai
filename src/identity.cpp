@@ -8,8 +8,10 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -93,9 +95,11 @@ namespace sc {
         }
 
         static string iso_date(const int year, const int month, const int day) {
-            char buffer[11];
-            snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d", year, month, day);
-            return buffer;
+            ostringstream date;
+            date << setfill('0') << setw(4) << year << '-'
+                 << setw(2) << month << '-'
+                 << setw(2) << day;
+            return date.str();
         }
 
         // Reads a printed date in any of the forms the three documents use:
