@@ -1,5 +1,5 @@
 #include <facedetector.h>
-#include <sc_postgres.h>
+#include <postgres.h>
 #include <iostream>
 
 using namespace std;
