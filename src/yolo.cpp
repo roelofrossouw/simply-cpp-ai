@@ -60,9 +60,9 @@ namespace sc {
                 threshold_ = {threshold, 2};
             }
 
-            void run(const std::string &image_filename) {
+            void run(const image &source) {
                 detections.clear();
-                original = std::make_unique<image>(image_filename);
+                original = std::make_unique<image>(source);
                 image input{*original};
                 if (const auto model_size = detector.image_size(); model_size.width() > 0 && model_size.height() > 0)
                     input.snap_to_size(0, {model_size});
@@ -125,7 +125,11 @@ namespace sc {
     }
 
     void yolo::detect(const std::filesystem::path &image_path) const {
-        impl->run(image_path.string());
+        detect(image{image_path.string()});
+    }
+
+    void yolo::detect(const image &input) const {
+        impl->run(input);
     }
 
     bool yolo::display(const int timeout) const {

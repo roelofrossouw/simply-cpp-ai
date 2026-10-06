@@ -6,6 +6,8 @@
 #include <filesystem>
 
 namespace sc {
+    class image;
+
     namespace impl {
         class yolo_impl;
     }
@@ -25,6 +27,7 @@ namespace sc {
         void set_threshold(double threshold);
 
         void detect(const std::filesystem::path &image_path) const;
+        void detect(const image &input) const;
 
         bool display(int timeout = 0) const;
 
