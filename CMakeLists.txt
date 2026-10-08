@@ -75,13 +75,14 @@ if (SC_AI_BUILD_TESTS)
 endif ()
 
 ############
+# Examples #
+############
+add_sc_example(sc-ai-demo RUN_AS_TEST TIMEOUT 120)
+
+############
 # Binaries #
 ############
 find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
-
-add_executable(sc-ai-demo apps/sc-ai-demo.cpp)
-target_link_libraries(sc-ai-demo PRIVATE sc::sc-ai-shared)
-install(TARGETS sc-ai-demo RUNTIME DESTINATION bin COMPONENT runtime)
 
 #add_executable(load-faces apps/load-faces.cpp)
 #target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
