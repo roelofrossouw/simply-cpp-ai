@@ -130,6 +130,33 @@ if (!embeddings.empty()) {
 
 Face JSON and file persistence store only the feature vector; the optional image is transient and omitted. This keeps serialized records lightweight and suitable for a database. `face::from_json()` and `face::load()` restore feature-only faces. Similarity is available through `similarity()` or `operator^`.
 
+## Demo
+
+`sc-ai-demo` is installed with the runtime package (`simply-cpp-ai`), so you can
+check that ONNX Runtime and the models work without the `-dev` package. It runs
+YOLO object detection on an image file, or, with no argument, on a small
+rendered image. That finds nothing, but proves everything loads and runs:
+
+```bash
+sc-ai-demo
+sc-ai-demo street.jpg
+```
+
+Its source is `examples/sc-ai-demo.cpp`; the code below is copied from it at
+configure time, so it always matches code that compiles:
+
+<!-- sc-example: examples/sc-ai-demo.cpp -->
+```cpp
+sc::timer sw;
+const sc::yolo yolo{"yolo26n.onnx"};
+std::cout << "Model loaded after " << sw << '\n';
+
+yolo.detect(std::filesystem::path{source});
+std::cout << source << ": " << yolo << '\n';
+std::cout << "Done after " << sw << '\n';
+```
+<!-- /sc-example -->
+
 ## Requirements
 
 - CMake 3.22 or newer
