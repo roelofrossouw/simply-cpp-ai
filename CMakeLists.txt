@@ -85,7 +85,7 @@ add_sc_example(sc-ai-identity)
 ############
 # Binaries #
 ############
-find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db)
+find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db 1.2.0) # pgsql.h: 1.2.0
 
 #add_executable(load-faces apps/load-faces.cpp)
 #target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
