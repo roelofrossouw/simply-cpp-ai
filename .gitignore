@@ -19,7 +19,8 @@ CMakeUserPresets.json
 #cmake-build-*
 /.idea/
 /cmake-build-*/
-# Ground truth for the identity benchmark: real people's details, never committed.
-tests/resource/identity-truth.csv
-tests/resource/identity_checked.csv
-tests/resource/identity*.csv
+# Real identity documents and their ground truth (people's details): never committed. Tests that
+# need them run only where this folder exists; the specimens in tests/resource/samples are public.
+tests/resource/private/
+
+.DS_Store

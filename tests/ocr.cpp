@@ -32,7 +32,7 @@ int main() {
     SECTION("Recognises text and returns positioned lines");
     {
         sc::ocr reader;
-        reader.detect("resource/test/ID-10.jpg");
+        reader.detect("resource/samples/card-sideways.jpg");
 
         CHECK(!reader.lines().empty());
         CHECK(!reader.text().empty());
@@ -47,18 +47,18 @@ int main() {
             CHECK(line.box.height() > 0);
         }
 
-        reader.detect("resource/test/ID-10.jpg", 90);
+        reader.detect("resource/samples/card-sideways.jpg", 90);
         for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
 
-        // The card is photographed sideways: sc::ocr reads it upright, with boxes on the image
+        // The specimen card is turned sideways: sc::ocr reads it upright, with boxes on the image
         // as given.
-        const sc::image given{"resource/test/ID-10.jpg"};
+        const sc::image given{"resource/samples/card-sideways.jpg"};
         const int rotation = sc::ocr::upright_rotation(given);
         CHECK(rotation == 90 || rotation == 270);
         reader.detect(given, 0);
         CHECK_EQ(reader.rotation(), rotation);
         const auto text = reader.text();
-        for (const char *expected: {"REPUBLIC OF SOUTH AFRICA", "NATIONAL IDENTITY CARD", "LUCAS", "MASANGO"})
+        for (const char *expected: {"REPUBLIC OF SOUTH AFRICA", "NATIONAL IDENTITY CARD", "SAMPLESON", "ALEX JORDAN"})
             CHECK_MSG(text.find(expected) != std::string::npos, std::string{"expected "} + expected);
         for (const auto &line: reader.lines())
             CHECK(line.box.left() >= -1 && line.box.right() <= given.size().width() + 1 &&
@@ -67,8 +67,8 @@ int main() {
 
     SECTION("Detects regions and recognises extracted text");
     {
-        // sc::ocr reads the card upright (it is photographed sideways), so the reference does too.
-        const sc::image given{"resource/test/ID-10.jpg"};
+        // sc::ocr reads the card upright (it is turned sideways), so the reference does too.
+        const sc::image given{"resource/samples/card-sideways.jpg"};
         sc::image input{given};
         const int rotation = sc::ocr::upright_rotation(given);
         CHECK(rotation == 90 || rotation == 270);
@@ -159,9 +159,9 @@ int main() {
     SECTION("Rejects missing input");
     {
         sc::ocr reader;
-        CHECK_THROWS_AS(reader.detect("resource/test/not-an-image.jpg"), std::runtime_error);
-        CHECK_THROWS_AS(reader.detect("resource/test/ID-10.jpg", -1), std::invalid_argument);
-        CHECK_THROWS_AS(reader.detect("resource/test/ID-10.jpg", 101), std::invalid_argument);
+        CHECK_THROWS_AS(reader.detect("resource/samples/not-an-image.jpg"), std::runtime_error);
+        CHECK_THROWS_AS(reader.detect("resource/samples/card-sideways.jpg", -1), std::invalid_argument);
+        CHECK_THROWS_AS(reader.detect("resource/samples/card-sideways.jpg", 101), std::invalid_argument);
     }
 
     TEST_SUMMARY();

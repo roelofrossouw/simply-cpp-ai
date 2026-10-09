@@ -207,3 +207,8 @@ cmake -B build -S .
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+
+The identity and OCR tests read specimen documents with made-up data (`tests/resource/samples`).
+Real identity documents are never committed: put them in `tests/resource/private/documents`
+(git-ignored), where face detection and a few extra checks look for them; without them those are
+skipped.

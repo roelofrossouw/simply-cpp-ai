@@ -6,9 +6,9 @@
 using namespace std;
 
 #ifdef __APPLE__
-const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/test/"};
+const filesystem::path image_path{"/Users/roelof/simply-cpp-suite/modules/sc-ai/tests/resource/private/documents/"};
 #else
-const filesystem::path image_path{"/var/www/build/sc-ai/tests/resource/test/"};
+const filesystem::path image_path{"/var/www/build/sc-ai/tests/resource/private/documents/"};
 #endif
 
 
