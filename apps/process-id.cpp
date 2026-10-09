@@ -3,8 +3,6 @@
 #include "identity.h"
 #include <pgsql.h>
 
-#include "ocr.h"
-
 using namespace std;
 
 #ifdef __APPLE__
@@ -61,8 +59,8 @@ int main() {
                 id.surname(),
                 face.to_json()["features"].dump()
             };
-            // auto db_result = dev.exec(query, parameters);
-            // cout << sw << " DB " << db_result[0]["id"] << endl;
+            auto db_result = dev.exec(query, parameters);
+            cout << sw << " DB " << db_result[0]["id"] << endl;
             sw.reset();
         }
     }
