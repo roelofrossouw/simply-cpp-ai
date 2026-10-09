@@ -143,6 +143,30 @@ int main() {
         std::filesystem::remove(path);
     }
 
+    SECTION("Detects lone letters and short words, as one region each");
+    {
+        // A tall letter's region used to come out at 90 degrees and be dropped as noise: F, A and 7
+        // were never found.
+        std::string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"700\">"
+                          "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>"
+                          "<g font-family=\"Arial, Helvetica, DejaVu Sans, Liberation Sans, sans-serif\">";
+        const char *tokens[] = {"M", "F", "ID", "No", "12", "A", "Sex", "RSA", "7", "OK"};
+        for (int i = 0; i < 10; ++i)
+            svg += "<text x=\"" + std::to_string(100 + i % 5 * 170) + "\" y=\"" + std::to_string(200 + i / 5 * 250) +
+                    "\" font-size=\"" + std::to_string(28 + i % 3 * 8) + "\">" + tokens[i] + "</text>";
+        svg += "</g></svg>";
+        const auto png = sc::svg2png::FromString(svg);
+        if (png.size() < 2000) {
+            std::cout << "   (no font to render text with: skipped)" << std::endl;
+        } else {
+            const auto path = (std::filesystem::temp_directory_path() / "sc-ai-test-ocr-tokens.png").string();
+            std::ofstream{path, std::ios::binary} << png;
+            sc::ocr_detector detector;
+            CHECK_EQ(detector.detect(std::filesystem::path{path}).size(), std::size_t{10});
+            std::filesystem::remove(path);
+        }
+    }
+
     SECTION("Rejects missing input");
     {
         sc::ocr reader;

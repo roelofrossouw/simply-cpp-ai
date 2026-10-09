@@ -28,6 +28,9 @@ namespace sc {
             constexpr int MaximumDetectionSide = 1280;
             constexpr double MaximumTextHeight = 14;
             constexpr double TypicalTextHeight = 11;
+            constexpr double MinimumTextHeight = 6;
+            // Tiles of a large input overlap this much (a multiple of 32), more than a line is tall.
+            constexpr int TileOverlap = 256;
             // How PaddleOCR's models were trained to see pixels, as (pixel - mean) * scale: the
             // detector with ImageNet's normalisation (mean 0.45, standard deviation 0.226, as one
             // value for all three channels), the recogniser from -1 to 1. The default (-0.5 to
@@ -42,6 +45,13 @@ namespace sc {
             constexpr float LineOrientationSure = 0.9f;
             // A line read one way only is read the other way as well when it reads below this.
             constexpr double RereadBelow = 98;
+            // A region this many times longer than tall is clearly a line, and shows the page's text
+            // direction; one less than ShortRegionAspect long is short enough to be turned to it.
+            constexpr double LongRegionAspect = 3;
+            // How far a region is grown back out from the text map's shrunk core (PaddleOCR uses
+            // 1.5; 2 covered whole lines best in testing, line ends included).
+            constexpr double UnclipRatio = 2;
+            constexpr double ShortRegionAspect = 2;
             // Smaller regions in the text map are dropped as specks. Small enough to keep a lone
             // letter - the M or F under an identity card's Sex label - which 500 lost.
             constexpr double MinimumRegionArea = 50;
@@ -143,15 +153,36 @@ namespace sc {
                 double height = bounds.height() * height_scale;
                 double mapped_angle = std::atan2(std::sin(angle) * scale_y, std::cos(angle) * scale_x) *
                                       180.0 / std::numbers::pi;
-                if (height > width) {
-                    std::swap(width, height);
-                    mapped_angle += 90;
-                }
                 return {
                     {center_x, center_y},
                     {width, height},
                     normalized_angle(mapped_angle)
                 };
+            }
+
+            // A region's direction is taken from its longer side, but a lone letter or a short word
+            // can be as tall as it is wide or taller (F, 7), so its longer side may run across the
+            // text: it was then dropped as noise among the page's lines, or read sideways. Short
+            // regions are turned to run the way the page's text does: the median direction of its
+            // clearly long regions (or level, without any). Their width can then be the shorter side.
+            std::vector<rotated_rect> along_text_direction(std::vector<rotated_rect> regions) {
+                std::vector<double> long_directions;
+                for (const auto &region: regions)
+                    if (region.width() >= region.height() * LongRegionAspect) long_directions.push_back(normalized_angle(region.angle()));
+                double direction = 0;
+                if (!long_directions.empty()) {
+                    std::ranges::nth_element(long_directions, long_directions.begin() + long_directions.size() / 2);
+                    direction = long_directions[long_directions.size() / 2];
+                }
+                for (auto &region: regions) {
+                    const double longer = std::max(region.width(), region.height());
+                    const double shorter = std::max(1e-9, std::min(region.width(), region.height()));
+                    if (longer >= shorter * ShortRegionAspect) continue;
+                    const double across = std::fmod(std::abs(normalized_angle(region.angle()) - direction), 180.0);
+                    if (std::min(across, 180 - across) <= 45) continue;
+                    region = {region.center(), size{region.height(), region.width()}, normalized_angle(region.angle() + 90)};
+                }
+                return regions;
             }
 
             // Top to bottom, then left to right within a row. Sorting on the top edge alone puts
@@ -211,21 +242,27 @@ namespace sc {
                 const int longest_side = std::max(input.size().width(), input.size().height());
                 const double scale = std::min(1.0, static_cast<double>(MaximumDetectionSide) / longest_side);
                 auto found = find_regions(input, scale);
-                // Large text is found word by word: look again at the scale the model reads best.
-                if (const double height = median_height(found.regions); height > MaximumTextHeight) {
-                    auto rescaled = find_regions(input, scale * TypicalTextHeight / height);
+                // Large text is found word by word, and text scaled down too far is lost: look again
+                // at the scale the model reads best - for small text in a large image, larger than the
+                // first look, in tiles.
+                const double height = median_height(found.regions);
+                if (height > MaximumTextHeight || (height > 0 && height < MinimumTextHeight && scale < 1)) {
+                    const double better = std::min(1.0, scale * TypicalTextHeight / height);
+                    auto rescaled = find_regions(input, better);
                     if (!rescaled.regions.empty()) found = std::move(rescaled);
                 }
-                const auto rectangles = likely_text_rectangles(found.regions, minimum_neighbors_, maximum_height_difference_);
+                const auto rectangles = likely_text_rectangles(along_text_direction(std::move(found.regions)),
+                                                               minimum_neighbors_, maximum_height_difference_);
 
                 std::vector<rotated_rect> result;
                 result.reserve(rectangles.size());
                 for (const auto &bounds: rectangles) {
-                    const auto mapped = map_to_original(bounds, found.detector_input, input, found.map_size);
-                    result.emplace_back(
-                        mapped.center(),
-                        size{mapped.width() + mapped.height() * 2, mapped.height() * 2},
-                        mapped.angle());
+                    // The map marks a shrunk core of each line: grow it back by its area times
+                    // UnclipRatio over its perimeter on every side, as PaddleOCR's post-processing does.
+                    const double w = bounds.width(), h = bounds.height();
+                    const double margin = w * h * UnclipRatio / (2 * (w + h));
+                    const rotated_rect grown{bounds.center(), size{w + 2 * margin, h + 2 * margin}, bounds.angle()};
+                    result.push_back(map_to_original(grown, found.detector_input, input, found.map_size));
                 }
                 return in_reading_order(std::move(result));
             }
@@ -241,28 +278,59 @@ namespace sc {
 
             [[nodiscard]] detection find_regions(const image &input, const double scale) const {
                 detection found{input, {}, {}};
-                if (scale < 1) {
+                if (scale != 1) {
                     found.detector_input.resize_to({
                         std::max(1, static_cast<int>(std::lround(input.size().width() * scale))),
                         std::max(1, static_cast<int>(std::lround(input.size().height() * scale)))
                     });
                 }
                 found.detector_input.snap_to_size(32, {found.detector_input.size()});
+                found.map_size = found.detector_input.size();
 
-                const auto outputs = detector.process_image(found.detector_input, DetectionScale, DetectionMean);
-                if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
-                    outputs.front().shape[0] != 1 || outputs.front().shape[1] != 1)
-                    throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
-
-                const auto &output = outputs.front();
-                found.map_size = {static_cast<int>(output.shape[3]), static_cast<int>(output.shape[2])};
-                if (found.map_size.width() <= 0 || found.map_size.height() <= 0)
-                    throw std::runtime_error{"PaddleOCR detection model returned an invalid map size"};
-
-                image probability_map = image::from_blob(output.data, found.map_size.width(), found.map_size.height(), 1);
+                const auto map = text_map(found.detector_input);
+                image probability_map = image::from_blob(map.data(), found.map_size.width(), found.map_size.height(), 1);
                 probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
                 found.regions = probability_map.find_min_area_rects(MinimumRegionArea);
                 return found;
+            }
+
+            // The model's text probability for every pixel of input (whose sides are multiples of
+            // 32). An input larger than MaximumDetectionSide is read in overlapping tiles of that
+            // size, whose maps are combined (the higher probability where they overlap), so a line
+            // across a tile edge is still one region.
+            [[nodiscard]] std::vector<float> text_map(const image &input) const {
+                const int width = input.size().width(), height = input.size().height();
+                std::vector<float> map(static_cast<size_t>(width) * height, 0.0f);
+                const auto starts = [](const int length) {
+                    std::vector<int> result{0};
+                    if (length <= MaximumDetectionSide) return result;
+                    const int stride = MaximumDetectionSide - TileOverlap;
+                    for (int start = stride; start + MaximumDetectionSide < length; start += stride) result.push_back(start);
+                    result.push_back(length - MaximumDetectionSide); // the last tile ends at the edge
+                    return result;
+                };
+                for (const int top: starts(height)) {
+                    for (const int left: starts(width)) {
+                        const int tile_width = std::min(width, MaximumDetectionSide);
+                        const int tile_height = std::min(height, MaximumDetectionSide);
+                        const bool whole = tile_width == width && tile_height == height;
+                        const auto outputs = whole
+                                                 ? detector.process_image(input, DetectionScale, DetectionMean)
+                                                 : detector.process_image(input.cropped(rect_i{left, top, tile_width, tile_height}),
+                                                                          DetectionScale, DetectionMean);
+                        if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
+                            outputs.front().shape[0] != 1 || outputs.front().shape[1] != 1 ||
+                            outputs.front().shape[2] != tile_height || outputs.front().shape[3] != tile_width)
+                            throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
+                        const float *tile = outputs.front().data;
+                        for (int y = 0; y < tile_height; ++y) {
+                            float *row = map.data() + static_cast<size_t>(top + y) * width + left;
+                            const float *tile_row = tile + static_cast<size_t>(y) * tile_width;
+                            for (int x = 0; x < tile_width; ++x) row[x] = std::max(row[x], tile_row[x]);
+                        }
+                    }
+                }
+                return map;
             }
 
             static double median_height(const std::vector<rotated_rect> &regions) {
