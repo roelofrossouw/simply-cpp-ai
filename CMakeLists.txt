@@ -77,7 +77,7 @@ endif ()
 ############
 # Examples #
 ############
-add_sc_example(sc-ai-demo RUN_AS_TEST TIMEOUT 120)
+add_sc_example(sc-ai-demo)
 
 ############
 # Binaries #

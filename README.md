@@ -132,28 +132,48 @@ Face JSON and file persistence store only the feature vector; the optional image
 
 ## Demo
 
-`sc-ai-demo` is installed with the runtime package (`simply-cpp-ai`), so you can
-check that ONNX Runtime and the models work without the `-dev` package. It runs
-YOLO object detection on an image file, or, with no argument, on a small
-rendered image. That finds nothing, but proves everything loads and runs:
+`sc-ai-demo` runs YOLO object detection on a photo and lists what it found:
 
 ```bash
-sc-ai-demo
 sc-ai-demo street.jpg
 ```
+
+```
+5 objects found
+  person         92.5% sure, centred at (53.2%, 44.3%), 20.3% x 51.9% of the image
+  surfboard      70.7% sure, centred at (50.8%, 72.6%), 16.3% x 17.5% of the image
+  ...
+```
+
+Without a photo it uses a small rendered image with nothing in it, which still
+shows the model, ONNX Runtime and sc-image loading and running. It is installed
+with the runtime package (`simply-cpp-ai`), so it works without the `-dev`
+package. It is a demonstration, not a test, so CTest doesn't run it.
+`sc::yolo::object_name(type)` gives the name of a detection's type.
 
 Its source is `examples/sc-ai-demo.cpp`; the code below is copied from it at
 configure time, so it always matches code that compiles:
 
 <!-- sc-example: examples/sc-ai-demo.cpp -->
 ```cpp
-sc::timer sw;
-const sc::yolo yolo{"yolo26n.onnx"};
-std::cout << "Model loaded after " << sw << '\n';
+heading("Loading the model");
+sc::yolo yolo{"yolo26n.onnx"};
+std::cout << "  sc::yolo yolo{\"yolo26n.onnx\"};\n      -> loaded in " << sw << '\n';
 
+heading("Detecting objects");
+sc::timer detecting;
 yolo.detect(std::filesystem::path{source});
-std::cout << source << ": " << yolo << '\n';
-std::cout << "Done after " << sw << '\n';
+std::cout << "  yolo.detect(\"" << source << "\");\n      -> done in " << detecting << '\n';
+
+// Each detection: centre x %, centre y %, width %, height %, confidence %, type.
+const auto detections = yolo.to_json();
+heading(std::to_string(detections.size()) + (detections.size() == 1 ? " object found" : " objects found"));
+for (const auto &found: detections) {
+    std::cout << "  " << std::left << std::setw(14) << sc::yolo::object_name(found[5].get<int>())
+              << std::right << std::fixed << std::setprecision(1) << std::setw(5) << found[4].get<double>()
+              << "% sure, centred at (" << found[0].get<double>() << "%, " << found[1].get<double>()
+              << "%), " << found[2].get<double>() << "% x " << found[3].get<double>() << "% of the image\n";
+}
 ```
 <!-- /sc-example -->
 

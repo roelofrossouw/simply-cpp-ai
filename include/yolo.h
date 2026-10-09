@@ -33,6 +33,10 @@ namespace sc {
 
         nlohmann::ordered_json to_json();
 
+        // The COCO name of a detection's type (the last value of each detection in to_json():
+        // [centre x %, centre y %, width %, height %, confidence %, type]), or "unknown".
+        [[nodiscard]] static std::string object_name(int type);
+
     private:
         impl::yolo_impl *impl;
     };
