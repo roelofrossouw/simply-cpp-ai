@@ -287,6 +287,7 @@ namespace sc {
         // remain stable.
         struct mrz_line1 {
             static constexpr size_t length = 44;
+            static constexpr size_t minimum_length = 20; // the rest is taken as lost fillers
 
             string surname;
             string names;
@@ -300,6 +301,19 @@ namespace sc {
                 const size_t separator = name_field.find("<<");
                 if (separator == string_view::npos) return false;
                 const auto decode_name = [](string value) {
+                    // A name field holds only letters and fillers: a digit in it is a misread
+                    // letter that looks like it (NAID00, J0RDAN, 5IPHO).
+                    for (char &c: value) {
+                        switch (c) {
+                            case '0': c = 'O'; break;
+                            case '1': c = 'I'; break;
+                            case '2': c = 'Z'; break;
+                            case '5': c = 'S'; break;
+                            case '6': c = 'G'; break;
+                            case '8': c = 'B'; break;
+                            default: break;
+                        }
+                    }
                     ranges::replace(value, '<', ' ');
                     return clean_name(value);
                 };
@@ -342,12 +356,26 @@ namespace sc {
             optional<mrz_line1> best;
             double best_score = numeric_limits<double>::infinity();
             for (const auto &line: lines) {
+                // The line, or the line with the rest of its row joined on (a line can be detected
+                // in pieces); short of the full length only for lost fillers, which are put back.
+                string row = line.packed;
+                const double row_tolerance = line.box.height() / 2;
+                vector<const text_line *> rest;
+                for (const auto &other: lines) {
+                    if (&other == &line || other.box.left() < line.box.right() - row_tolerance) continue;
+                    if (std::abs((other.box.top() + other.box.height() / 2) - (line.box.top() + line.box.height() / 2)) > row_tolerance) continue;
+                    rest.push_back(&other);
+                }
+                ranges::sort(rest, {}, [](const text_line *l) { return l->box.left(); });
+                for (const auto *other: rest) row += other->packed;
+
                 string window;
-                window.reserve(line.packed.size());
-                for (const unsigned char c: upper(line.packed)) {
+                window.reserve(row.size());
+                for (const unsigned char c: upper(row)) {
                     if (isalnum(c) || c == '<') window += static_cast<char>(c);
                 }
-                if (window.size() < mrz_line1::length) continue;
+                if (window.size() < mrz_line1::minimum_length) continue;
+                if (window.size() < mrz_line1::length) window.append(mrz_line1::length - window.size(), '<');
 
                 const double vertical_gap = line2.box.top() - line.box.bottom();
                 const double horizontal_gap = max({
@@ -480,6 +508,8 @@ namespace sc {
         // ------------------------------------------------------------- the OCR
         static ocr &recognizer() {
             static thread_local ocr instance;
+            static thread_local const bool configured = (instance.set_auto_rotate(false), true); // rotations are chosen here
+            (void) configured;
             return instance;
         }
 
@@ -561,7 +591,7 @@ namespace sc {
                 // Read it the way up the orientation model says. Only when that misses fields, try
                 // it turned a quarter either way too: an upside-down reading is caught already,
                 // since each line is also read upside down.
-                const int upright = upright_rotation(input);
+                const int upright = ocr::upright_rotation(input);
                 best.rotation_ = upright;
                 populate(best, recognise(turned(input, upright)));
                 if (!needs_rotation_retry(best)) return best;
@@ -582,36 +612,6 @@ namespace sc {
                 image result{input};
                 if (rotation) result.rotate(rotation);
                 return result;
-            }
-
-            // How far to turn the photo (0, 90, 180 or 270 degrees, as image::rotate) for the
-            // document to be upright, from PaddleOCR's document orientation classifier. Its class
-            // k means the photo is turned k quarters from upright. The model sees the centre
-            // 224 x 224 pixels with the shorter side scaled to 256, ImageNet-normalised.
-            static int upright_rotation(const image &input) {
-                static thread_local const std::unique_ptr<onnx> classifier = []() -> std::unique_ptr<onnx> {
-                    try {
-                        return std::make_unique<onnx>("paddle_rotate.onnx", false);
-                    } catch (const std::exception &) {
-                        return nullptr; // not installed (an older simply-cpp-models): taken as upright
-                    }
-                }();
-                if (!classifier) return 0;
-                const auto size = input.size();
-                const double scale = 256.0 / std::min(size.width(), size.height());
-                const auto scaled = input.resized({
-                    std::max(224, static_cast<int>(std::lround(size.width() * scale))),
-                    std::max(224, static_cast<int>(std::lround(size.height() * scale)))
-                });
-                const auto scaled_size = scaled.size();
-                const auto centre = scaled.cropped(rect_i{
-                    (scaled_size.width() - 224) / 2, (scaled_size.height() - 224) / 2, 224, 224
-                });
-                const auto outputs = classifier->process_image(centre, 1.0 / (0.226 * 255), 0.45 * 255);
-                if (outputs.empty() || outputs.front().shape.size() != 2 || outputs.front().shape[1] != 4) return 0;
-                const float *scores = outputs.front().data;
-                const auto quarters = static_cast<int>(max_element(scores, scores + 4) - scores);
-                return (4 - quarters) % 4 * 90;
             }
 
             static bool needs_rotation_retry(const identity &result) {

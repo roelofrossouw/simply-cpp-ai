@@ -113,6 +113,17 @@ namespace sc {
         /// Recognises each region upright and upside down, retaining results at or above this confidence percentage.
         void detect(const image &input, double minimum_confidence = 85) const;
 
+        /// Whether detect() first turns the image upright with the document orientation
+        /// classifier (on by default). Lines' boxes are always in the given image's coordinates.
+        void set_auto_rotate(bool auto_rotate);
+
+        /// How far detect() turned the last image (0, 90, 180 or 270 degrees, as image::rotate).
+        [[nodiscard]] int rotation() const;
+
+        /// How far to turn an image (0, 90, 180 or 270 degrees, as image::rotate) for its text to
+        /// be upright, from PaddleOCR's document orientation classifier; 0 when it isn't installed.
+        [[nodiscard]] static int upright_rotation(const image &input);
+
         [[nodiscard]] const std::vector<line> &lines() const;
 
         [[nodiscard]] std::string text() const;
