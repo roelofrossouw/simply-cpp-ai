@@ -2,18 +2,18 @@
 // found. Pass a photo to detect objects in it; without one it uses a small rendered image, which
 // has no objects, but still shows the model, ONNX Runtime and sc-image loading and running.
 
-#include <console.h>
+#include <iostream>
+#include <string>
+#include <sstream>
+#include <fstream>
+#include <filesystem>
+#include <iomanip>
+
+#include <sc.h>
+
 #include <image.h>
 #include <svg2png.h>
-#include <timer.h>
 #include <yolo.h>
-
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <sstream>
-#include <string>
 
 int main(int argc, char **argv) {
     try {
