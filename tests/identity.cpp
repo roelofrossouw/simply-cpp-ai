@@ -65,7 +65,12 @@ int main() {
 
     SECTION("Reading a passport");
     {
-        const sc::identity passport{"resource/test/PASPOORT-1.jpg"};
+        // A specimen with made-up data (resource/samples).
+        const sc::identity passport{"resource/samples/passport.jpg"};
+        CHECK_EQ(passport.id_number(), string{VALID});
+        CHECK_EQ(passport.surname(), string{"SAMPLESON"});
+        CHECK_EQ(passport.names(), string{"ALEX JORDAN"});
+        CHECK_EQ(passport.passport_number(), string{"A12345678"});
         CHECK(passport.has_id_number());
         CHECK(passport.document_type() == sc::identity::document::passport);
         CHECK(sc::identity::valid_id_number(passport.id_number()));

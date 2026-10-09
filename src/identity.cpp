@@ -511,7 +511,13 @@ namespace sc {
                 for (const auto key: keys) {
                     const auto at = lines[i].alnum.find(key);
                     if (at == string::npos) continue;
-                    if (key == "VAN" && at != 0) continue;
+                    // VAN is a label (Afrikaans for surname) only on its own or as VAN/SURNAME:
+                    // VAN DER MERWE is a surname, not the label VAN with DER MERWE after it.
+                    if (key == "VAN") {
+                        if (at != 0) continue;
+                        const auto after = lines[i].text.find_first_not_of(" ", lines[i].text.find_first_not_of(" ") + 3);
+                        if (after != string::npos && lines[i].text[after] != '/' && lines[i].text[after] != ':') continue;
+                    }
 
                     const string tail = trim(tail_after(lines[i].text, at + key.size()));
                     if (separator_after_alnum(lines[i].text, at + key.size()) &&

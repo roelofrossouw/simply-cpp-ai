@@ -18,8 +18,15 @@ int main() {
     fd.set_max_faces(MaxFaces);
     vector<pair<string, sc::face> > feats;
 
+    // Faces need real photographs: the private documents (resource/private/documents, kept out of
+    // the repository). Without them there is nothing to detect.
+    const fs::path documents{"resource/private/documents"};
+    if (!fs::is_directory(documents)) {
+        cout << "No private documents (" << documents.string() << "): skipped" << endl;
+        return 0;
+    }
     bool tested_image_input = false;
-    for (const auto &img_file: fs::directory_iterator("resource/test/")) {
+    for (const auto &img_file: fs::directory_iterator(documents)) {
         if (!img_file.is_regular_file()) continue;
         if (!counter--) break;
         sc::timer sw2;

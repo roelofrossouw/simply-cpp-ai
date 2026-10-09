@@ -44,7 +44,7 @@ int main() {
 
     SECTION("Optional image");
     {
-        const sc::image image{"resource/test/ID.jpg"};
+        const sc::image image{"resource/samples/card.jpg"}; // any image will do
         sc::face::feature_vector features{};
         features[0] = 1.0f;
         const sc::face with_image{features, image};
