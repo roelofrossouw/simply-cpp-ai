@@ -93,7 +93,7 @@ namespace sc {
         /// was requested. Images are not retained with the embeddings.
         [[nodiscard]] const std::vector<face> &faces() const noexcept;
 
-        /// Rotation in degrees applied before OCR: 0, 90 or 180.
+        /// Rotation in degrees applied before OCR, as image::rotate: 0, 90, 180 or 270.
         [[nodiscard]] int rotation() const noexcept;
 
         [[nodiscard]] const std::string &surname() const noexcept;

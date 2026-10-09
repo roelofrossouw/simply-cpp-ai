@@ -112,7 +112,7 @@ namespace sc {
                 return data;
             }
 
-            std::vector<output> run_images(const std::vector<image> &images) {
+            std::vector<output> run_images(const std::vector<image> &images, const double scale, const double mean) {
                 if (images.empty()) return {};
                 if (inputs.size() != 1 || inputs.front().second.size() != 4 ||
                     inputs.front().second[1] != 3)
@@ -127,7 +127,7 @@ namespace sc {
                 int width = model_shape[3] > 0 ? static_cast<int>(model_shape[3]) : 0;
                 for (const auto &img: images) {
                     if (img.empty()) throw std::invalid_argument{"Image batch cannot contain empty images"};
-                    img.generate_blob(1.0 / 255.0, 127.5, true);
+                    img.generate_blob(scale, mean, true);
                     if (img.blob_shape_size() != 4 || img.blob_shape()[0] != 1 || img.blob_shape()[1] != 3)
                         throw std::invalid_argument{"Image blobs must have shape [1, 3, height, width]"};
                     const int image_height = static_cast<int>(img.blob_shape()[2]);
@@ -232,7 +232,11 @@ namespace sc {
     onnx::~onnx() { delete impl; }
 
     std::vector<output> onnx::process_image(const image &img) const {
-        img.generate_blob(1.0 / 255.0, 127.5, true);
+        return process_image(img, 1.0 / 255.0, 127.5);
+    }
+
+    std::vector<output> onnx::process_image(const image &img, const double scale, const double mean) const {
+        img.generate_blob(scale, mean, true);
         const val input = val::CreateTensor<float>(impl->memInfo,
                                                    img.blob(), img.blob_size(),
                                                    img.blob_shape(), img.blob_shape_size());
@@ -240,7 +244,12 @@ namespace sc {
     }
 
     std::vector<output> onnx::process_images(const std::vector<image> &images) const {
-        return impl->run_images(images);
+        return process_images(images, 1.0 / 255.0, 127.5);
+    }
+
+    std::vector<output> onnx::process_images(const std::vector<image> &images, const double scale,
+                                             const double mean) const {
+        return impl->run_images(images, scale, mean);
     }
 
     int onnx::yolo26_size() const {
