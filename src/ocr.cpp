@@ -50,6 +50,8 @@ namespace sc {
             // far worse the wrong way.)
             constexpr double RereadBelow = 98;
             constexpr double OtherWayMargin = 15;
+            // How much an MRZ-like line is stretched for its second reading.
+            constexpr double DenseLineStretch = 1.5;
             // A region this many times longer than tall is clearly a line, and shows the page's text
             // direction; one less than ShortRegionAspect long is short enough to be turned to it.
             constexpr double LongRegionAspect = 3;
@@ -464,7 +466,8 @@ namespace sc {
                 return decode(recognizer.process_image(resized, RecognitionScale, RecognitionMean));
             }
 
-            [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image> &inputs) const {
+            [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image> &inputs,
+                                                                        const double stretch = 1) const {
                 if (inputs.empty()) return {};
                 std::vector<image> resized;
                 resized.reserve(inputs.size());
@@ -472,6 +475,7 @@ namespace sc {
                     if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
                     auto &text_image = resized.emplace_back(input);
                     text_image.resize_to({0, 48});
+                    if (stretch != 1) text_image.resize_to({static_cast<int>(std::lround(text_image.size().width() * stretch)), 48});
                 }
                 const auto outputs = recognizer.process_images(resized, RecognitionScale, RecognitionMean);
                 if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
@@ -639,11 +643,39 @@ namespace sc {
                 }
                 const auto other_readings = other_way.empty() ? std::vector<ocr_recognizer::result>{} : recognizer.recognize(other_way);
                 std::vector<const ocr_recognizer::result *> chosen(text_images.size());
+                std::vector<bool> chosen_upside_down(text_images.size(), page_upside_down);
                 for (size_t i = 0; i < text_images.size(); ++i) chosen[i] = &page_readings[i];
                 for (size_t r = 0; r < other_of.size(); ++r) {
                     const size_t i = other_of[r];
-                    if (static_cast<double>(other_readings[r].confidence) >= static_cast<double>(page_readings[i].confidence) + OtherWayMargin)
+                    if (static_cast<double>(other_readings[r].confidence) >= static_cast<double>(page_readings[i].confidence) + OtherWayMargin) {
                         chosen[i] = &other_readings[r];
+                        chosen_upside_down[i] = !page_upside_down;
+                    }
+                }
+
+                // An MRZ is tightly spaced: a double letter can merge into one (NAIDOO read NAIDO).
+                // Lines that may be one (with a <, or 30 characters or more) are read again
+                // stretched, and that reading is taken when it reads as an MRZ and is longer -
+                // letters back - and about as confident. Ordinary text reads worse stretched.
+                std::vector<image> dense;
+                std::vector<size_t> dense_of;
+                for (size_t i = 0; i < text_images.size(); ++i) {
+                    const auto &text = chosen[i]->text;
+                    if (text.find('<') == std::string::npos && text.size() < 30) continue;
+                    dense.push_back(text_images[i]);
+                    if (chosen_upside_down[i]) dense.back().rotate(180);
+                    dense_of.push_back(i);
+                }
+                const auto dense_readings = dense.empty() ? std::vector<ocr_recognizer::result>{}
+                                                          : recognizer.recognize(dense, DenseLineStretch);
+                for (size_t r = 0; r < dense_of.size(); ++r) {
+                    const size_t i = dense_of[r];
+                    const auto &stretched = dense_readings[r].text, &first = chosen[i]->text;
+                    if (stretched.find("<<") == std::string::npos) continue; // not an MRZ after all
+                    const bool newly_mrz = first.find("<<") == std::string::npos;
+                    if ((newly_mrz || stretched.size() > first.size()) &&
+                        static_cast<double>(dense_readings[r].confidence) >= static_cast<double>(chosen[i]->confidence) - 5)
+                        chosen[i] = &dense_readings[r];
                 }
 
                 for (size_t i = 0; i < regions.size(); ++i) {
@@ -811,6 +843,10 @@ namespace sc {
 
     std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image> &inputs) const {
         return impl->recognize(inputs);
+    }
+
+    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image> &inputs, const double stretch) const {
+        return impl->recognize(inputs, stretch);
     }
 
     ocr::ocr(const std::string &detection_model, const std::string &recognition_model,

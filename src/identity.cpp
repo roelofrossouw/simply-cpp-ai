@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 using namespace std;
@@ -405,6 +406,63 @@ namespace sc {
             "IDENTITYNO", "IDNO", "SEX", "GESLAG"
         };
 
+        // Words printed on the documents themselves, as they read in English, Afrikaans and the
+        // passport's French and Spanish: never a name. Matched loosely (they misread too - PASPORT,
+        // PASSP0RT) anywhere in the letters, as bilingual captions run together (PASPOORTPASSPORT).
+        // Words that are also names or parts of names (VAN, DU) are left out.
+        static constexpr array<string_view, 24> DOCUMENT_WORDS = {
+            "PASSPORT", "PASPOORT", "PASSEPORT", "PASAPORTE", "REPUBLIC", "REPUBLIEK", "AFRICA", "AFRIKA",
+            "IDENTITY", "IDENTITEIT", "NATIONAL", "NATIONALITY", "NASIONALITEIT", "CITIZEN", "SURNAME",
+            "FORENAMES", "SIGNATURE", "HANDTEKENING", "DEPARTMENT", "AFFAIRS", "BINNELANDSE", "DOCUMENT",
+            "DOKUMENT", "AUTHORITY"
+        };
+
+        static size_t edit_distance(const string_view a, const string_view b) {
+            vector<size_t> row(b.size() + 1);
+            for (size_t j = 0; j <= b.size(); ++j) row[j] = j;
+            for (size_t i = 1; i <= a.size(); ++i) {
+                size_t diagonal = row[0];
+                row[0] = i;
+                for (size_t j = 1; j <= b.size(); ++j) {
+                    const size_t above = row[j];
+                    row[j] = min({row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] == b[j - 1] ? 0 : 1)});
+                    diagonal = above;
+                }
+            }
+            return row[b.size()];
+        }
+
+        // Whether value holds one of DOCUMENT_WORDS, to within two letters for long words and one
+        // for shorter ones. Checked once per text: the name searches ask about pairs of lines.
+        static bool has_document_word(const string &value) {
+            static thread_local unordered_map<string, bool> known;
+            if (const auto found = known.find(value); found != known.end()) return found->second;
+            string letters;
+            for (const unsigned char c: value) if (isalpha(c)) letters += static_cast<char>(toupper(c));
+            bool result = false;
+            for (const auto word: DOCUMENT_WORDS) {
+                const size_t allowed = word.size() >= 8 ? 2 : 1;
+                for (size_t length = word.size() - 1; length <= word.size() + 1 && !result; ++length)
+                    for (size_t at = 0; at + length <= letters.size() && !result; ++at)
+                        result = edit_distance(string_view{letters}.substr(at, length), word) <= allowed;
+                if (result) break;
+            }
+            if (known.size() > 10000) known.clear();
+            known.emplace(value, result);
+            return result;
+        }
+
+        // The other language's half of a bilingual label ("Surname / Van", "Sex / Geslag"): after a
+        // label, text that is only one of these is more label, not its value. (VAN is no caption on
+        // its own: it starts surnames like VAN DER MERWE.)
+        static bool is_label_translation(const string &alnum) {
+            static constexpr array<string_view, 14> words = {
+                "VAN", "SURNAME", "VOORNAME", "VOORNAAM", "NAMES", "GIVENNAMES", "NASIONALITEIT", "NATIONALITY",
+                "GESLAG", "SEX", "GEBOORTEDATUM", "DATEOFBIRTH", "GEBOORTEPLEK", "PLACEOFBIRTH"
+            };
+            return ranges::find(words, string_view{upper(alnum)}) != words.end();
+        }
+
         static bool is_caption(const string &value) {
             return value.find("SOUTHAFRICA") != string::npos || value.find("REPUBLIC") != string::npos ||
                    value.find("SABURGER") != string::npos || value.find("SACITIZEN") != string::npos ||
@@ -414,7 +472,7 @@ namespace sc {
                    value.find("ADRESVERANDERING") != string::npos || value.find("GEREGISTREERDE") != string::npos ||
                    ranges::any_of(CAPTIONS, [&value](const string_view caption) {
                        return value.find(caption) != string::npos;
-                   });
+                   }) || has_document_word(value);
         }
 
         // -------------------------------------------------------- field labels
@@ -457,7 +515,7 @@ namespace sc {
 
                     const string tail = trim(tail_after(lines[i].text, at + key.size()));
                     if (separator_after_alnum(lines[i].text, at + key.size()) &&
-                        !tail.empty() && !is_caption(keep_alnum(tail)))
+                        !tail.empty() && !is_caption(keep_alnum(tail)) && !is_label_translation(keep_alnum(tail)))
                         return tail;
 
                     const auto &label = lines[i].box;
@@ -529,9 +587,12 @@ namespace sc {
             return lines;
         }
 
+        // Lines read with less confidence are left out, except when looking for the MRZ.
+        static constexpr double MinimumLineConfidence = 85;
+
         static vector<text_line> recognise(const image &input) {
             auto &reader = recognizer();
-            reader.detect(input, 85);
+            reader.detect(input, 0); // every line: populate() leaves out the doubtful ones but for the MRZ
             return make_text_lines(reader.lines());
         }
 
@@ -626,11 +687,16 @@ namespace sc {
                 return candidate.checks_.score() > best.checks_.score();
             }
 
-            static void populate(identity &result, const vector<text_line> &lines) {
+            static void populate(identity &result, const vector<text_line> &all_lines) {
+                // The MRZ is looked for among every line read: check digits validate it, and
+                // runs of fillers often read below the confidence the other fields need.
+                vector<text_line> lines;
+                for (const auto &line: all_lines)
+                    if (line.confidence >= MinimumLineConfidence) lines.push_back(line);
                 result.raw_text_.clear();
                 result.raw_text_.reserve(lines.size());
                 for (auto const &tl: lines) result.raw_text_.push_back(tl.text);
-                const auto mrz = find_mrz(lines);
+                const auto mrz = find_mrz(all_lines);
                 const auto labelled = find_labelled_id_number(lines);
                 const auto printed = labelled ? labelled : find_id_number(lines);
 
@@ -643,7 +709,7 @@ namespace sc {
                     result.date_of_expiry_ = mrz->line2.date_of_expiry;
                     result.sex_ = mrz->line2.sex;
                     result.nationality_ = mrz->line2.nationality;
-                    result.ocr_confidence_ = mrz_line_confidence(lines);
+                    result.ocr_confidence_ = mrz_line_confidence(all_lines);
                 } else if (printed) {
                     result.id_number_ = printed->number;
                     result.ocr_confidence_ = printed->confidence;
@@ -654,7 +720,7 @@ namespace sc {
                     result.date_of_birth_ = identity::id_date_of_birth(result.id_number_);
                 }
                 if (mrz) {
-                    if (const auto names = find_mrz_line1(lines, mrz->line_index)) {
+                    if (const auto names = find_mrz_line1(all_lines, mrz->line_index)) {
                         result.surname_ = names->surname;
                         result.names_ = names->names;
                     }
