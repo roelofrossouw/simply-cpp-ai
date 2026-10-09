@@ -2,6 +2,7 @@
 #include "facedetector.h"
 #include "image.h"
 #include "ocr.h"
+#include "onnx.h"
 
 #include <algorithm>
 #include <array>
@@ -11,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -556,38 +558,72 @@ namespace sc {
                     best.faces_ = detector.detect(input, false);
                 }
 
-                populate(best, recognise(input));
+                // Read it the way up the orientation model says. Only when that misses fields, try
+                // it turned a quarter either way too: an upside-down reading is caught already,
+                // since each line is also read upside down.
+                const int upright = upright_rotation(input);
+                best.rotation_ = upright;
+                populate(best, recognise(turned(input, upright)));
                 if (!needs_rotation_retry(best)) return best;
 
-                for (const int rotation: {90, 270}) {
-                    image rotated_input{input};
-                    rotated_input.rotate(rotation);
+                for (const int rotation: {(upright + 90) % 360, (upright + 270) % 360}) {
                     identity candidate;
                     candidate.rotation_ = rotation;
                     candidate.faces_ = best.faces_;
                     candidate.face_detection_performed_ = face_detection;
-                    populate(candidate, recognise(rotated_input));
-                    if (quality(candidate) > quality(best)) best = std::move(candidate);
+                    populate(candidate, recognise(turned(input, rotation)));
+                    if (more_verified(candidate, best)) best = std::move(candidate);
                 }
                 return best;
             }
 
         private:
+            static image turned(const image &input, const int rotation) {
+                image result{input};
+                if (rotation) result.rotate(rotation);
+                return result;
+            }
+
+            // How far to turn the photo (0, 90, 180 or 270 degrees, as image::rotate) for the
+            // document to be upright, from PaddleOCR's document orientation classifier. Its class
+            // k means the photo is turned k quarters from upright. The model sees the centre
+            // 224 x 224 pixels with the shorter side scaled to 256, ImageNet-normalised.
+            static int upright_rotation(const image &input) {
+                static thread_local const std::unique_ptr<onnx> classifier = []() -> std::unique_ptr<onnx> {
+                    try {
+                        return std::make_unique<onnx>("paddle_rotate.onnx", false);
+                    } catch (const std::exception &) {
+                        return nullptr; // not installed (an older simply-cpp-models): taken as upright
+                    }
+                }();
+                if (!classifier) return 0;
+                const auto size = input.size();
+                const double scale = 256.0 / std::min(size.width(), size.height());
+                const auto scaled = input.resized({
+                    std::max(224, static_cast<int>(std::lround(size.width() * scale))),
+                    std::max(224, static_cast<int>(std::lround(size.height() * scale)))
+                });
+                const auto scaled_size = scaled.size();
+                const auto centre = scaled.cropped(rect_i{
+                    (scaled_size.width() - 224) / 2, (scaled_size.height() - 224) / 2, 224, 224
+                });
+                const auto outputs = classifier->process_image(centre, 1.0 / (0.226 * 255), 0.45 * 255);
+                if (outputs.empty() || outputs.front().shape.size() != 2 || outputs.front().shape[1] != 4) return 0;
+                const float *scores = outputs.front().data;
+                const auto quarters = static_cast<int>(max_element(scores, scores + 4) - scores);
+                return (4 - quarters) % 4 * 90;
+            }
+
             static bool needs_rotation_retry(const identity &result) {
                 return !result.has_id_number() || result.names_.empty() || result.surname_.empty();
             }
 
-            static int quality(const identity &result) {
-                int score = result.checks_.score() * 10;
-                score += result.has_id_number() ? 1000 : 0;
-                for (const auto *field: {
-                         &result.surname_, &result.names_, &result.date_of_birth_, &result.sex_,
-                         &result.nationality_, &result.country_of_birth_, &result.status_,
-                         &result.passport_number_, &result.date_of_issue_, &result.date_of_expiry_
-                     }) {
-                    if (!field->empty()) ++score;
-                }
-                return score;
+            // Whether a reading at another rotation beats the orientation model's: only with an ID
+            // number it lacks or more checks agreeing. Filling more fields doesn't count - sideways
+            // lines can be read too, into the wrong fields.
+            static bool more_verified(const identity &candidate, const identity &best) {
+                if (candidate.has_id_number() != best.has_id_number()) return candidate.has_id_number();
+                return candidate.checks_.score() > best.checks_.score();
             }
 
             static void populate(identity &result, const vector<text_line> &lines) {
@@ -943,24 +979,38 @@ namespace sc {
                 if (result.sex_.empty()) result.sex_ = expected;
             }
 
-            // The sex is printed as a lone M or F beside or under its label.
+            // The sex is printed as a lone M or F after, beside or under its label: the rest of the
+            // label's line, or the M or F line nearest the label to its right or below it. (Reading
+            // order puts the next label on the same row, not the value under it, next.)
             static string printed_sex(const vector<text_line> &lines) {
-                for (size_t i = 0; i < lines.size(); ++i) {
-                    auto at = lines[i].alnum.find("SEX");
+                const auto is_sex = [](const string &value) { return value == "M" || value == "F"; };
+                string nearest;
+                double nearest_distance = numeric_limits<double>::infinity();
+                for (const auto &label: lines) {
+                    auto at = label.alnum.find("SEX");
                     size_t width = 3;
                     if (at == string::npos) {
-                        at = lines[i].alnum.find("GESLAG");
+                        at = label.alnum.find("GESLAG");
                         width = 6;
                     }
                     if (at == string::npos) continue;
-                    for (const string &candidate: {
-                             lines[i].alnum.substr(at + width),
-                             i + 1 < lines.size() ? lines[i + 1].alnum : string{}
-                         }) {
-                        if (candidate == "M" || candidate == "F") return candidate;
+                    if (const auto rest = label.alnum.substr(at + width); is_sex(rest)) return rest;
+
+                    const auto &box = label.box;
+                    const double reach = max(box.height() * 6.0, box.width() * 1.5);
+                    for (const auto &candidate: lines) {
+                        if (!is_sex(candidate.alnum)) continue;
+                        const auto &value = candidate.box;
+                        if (value.bottom() < box.top() || value.right() < box.left()) continue; // above or left of it
+                        const double horizontal_gap = max(0.0, value.left() - box.right());
+                        const double vertical_gap = max(0.0, value.top() - box.bottom());
+                        const double distance = hypot(horizontal_gap, vertical_gap);
+                        if (distance > reach || distance >= nearest_distance) continue;
+                        nearest = candidate.alnum;
+                        nearest_distance = distance;
                     }
                 }
-                return {};
+                return nearest;
             }
         };
     } // namespace impl

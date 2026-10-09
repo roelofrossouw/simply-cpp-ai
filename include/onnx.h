@@ -48,10 +48,17 @@ namespace sc {
 
         ~onnx();
 
+        /// Runs one inference for an RGB image, given to the model as (pixel - 127.5) / 255.
         std::vector<output> process_image(const image &img) const;
+
+        /// Runs one inference for an RGB image, given to the model as (pixel - mean) * scale.
+        std::vector<output> process_image(const image &img, double scale, double mean) const;
 
         /// Runs one inference for equally tall RGB images, padding them to a common width.
         std::vector<output> process_images(const std::vector<image> &images) const;
+
+        /// The same, with each image given to the model as (pixel - mean) * scale.
+        std::vector<output> process_images(const std::vector<image> &images, double scale, double mean) const;
 
         [[nodiscard]] int yolo26_size() const;
 

@@ -28,6 +28,23 @@ namespace sc {
             constexpr int MaximumDetectionSide = 1280;
             constexpr double MaximumTextHeight = 14;
             constexpr double TypicalTextHeight = 11;
+            // How PaddleOCR's models were trained to see pixels, as (pixel - mean) * scale: the
+            // detector with ImageNet's normalisation (mean 0.45, standard deviation 0.226, as one
+            // value for all three channels), the recogniser from -1 to 1. The default (-0.5 to
+            // 0.5) gave the detector about a quarter of the contrast it expects.
+            constexpr double DetectionScale = 1.0 / (0.226 * 255);
+            constexpr double DetectionMean = 0.45 * 255;
+            constexpr double RecognitionScale = 1.0 / 127.5;
+            constexpr double RecognitionMean = 127.5;
+            // PaddleOCR's text line orientation classifier, and how sure it must be for a line to be
+            // read only that way up (otherwise it is read both ways, which takes twice as long).
+            const std::string LineOrientationModel = "paddle_line_rotate.onnx";
+            constexpr float LineOrientationSure = 0.9f;
+            // A line read one way only is read the other way as well when it reads below this.
+            constexpr double RereadBelow = 98;
+            // Smaller regions in the text map are dropped as specks. Small enough to keep a lone
+            // letter - the M or F under an identity card's Sex label - which 500 lost.
+            constexpr double MinimumRegionArea = 50;
 
             fs::path find_dictionary(const std::string &recognition_model, const fs::path &dictionary) {
                 if (!dictionary.empty()) {
@@ -167,7 +184,7 @@ namespace sc {
 
         class ocr_detector_impl {
         public:
-            explicit ocr_detector_impl(const std::string &model) : detector(model, false) {
+            explicit ocr_detector_impl(const std::string &model) : detector(model, true) { // CoreML on macOS: about 3x quicker
 #ifndef NDEBUG
                 detector.show_shapes();
 #endif
@@ -232,7 +249,7 @@ namespace sc {
                 }
                 found.detector_input.snap_to_size(32, {found.detector_input.size()});
 
-                const auto outputs = detector.process_image(found.detector_input);
+                const auto outputs = detector.process_image(found.detector_input, DetectionScale, DetectionMean);
                 if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
                     outputs.front().shape[0] != 1 || outputs.front().shape[1] != 1)
                     throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
@@ -244,7 +261,7 @@ namespace sc {
 
                 image probability_map = image::from_blob(output.data, found.map_size.width(), found.map_size.height(), 1);
                 probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
-                found.regions = probability_map.find_min_area_rects(500);
+                found.regions = probability_map.find_min_area_rects(MinimumRegionArea);
                 return found;
             }
 
@@ -266,7 +283,7 @@ namespace sc {
         class ocr_recognizer_impl {
         public:
             ocr_recognizer_impl(const std::string &model, const fs::path &dictionary)
-                : recognizer(model, false),
+                : recognizer(model, false), // not CoreML: it compiles again for every new line width
                   characters(load_dictionary(find_dictionary(model, dictionary))) {
 #ifndef NDEBUG
                 recognizer.show_shapes();
@@ -282,7 +299,7 @@ namespace sc {
                 if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
                 image resized{input};
                 resized.resize_to({0, 48});
-                return decode(recognizer.process_image(resized));
+                return decode(recognizer.process_image(resized, RecognitionScale, RecognitionMean));
             }
 
             [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image> &inputs) const {
@@ -294,7 +311,7 @@ namespace sc {
                     auto &text_image = resized.emplace_back(input);
                     text_image.resize_to({0, 48});
                 }
-                const auto outputs = recognizer.process_images(resized);
+                const auto outputs = recognizer.process_images(resized, RecognitionScale, RecognitionMean);
                 if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
                     outputs.front().shape[0] != static_cast<int64_t>(resized.size()))
                     throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
@@ -389,6 +406,11 @@ namespace sc {
             ocr_impl(const std::string &detection_model, const std::string &recognition_model,
                      const fs::path &dictionary)
                 : detector(detection_model), recognizer(recognition_model, dictionary) {
+                try {
+                    line_classifier = std::make_unique<onnx>(LineOrientationModel, false);
+                } catch (const std::exception &) {
+                    // Not installed (an older simply-cpp-models): every line is read both ways.
+                }
             }
 
             void set_threshold(const double threshold) {
@@ -415,18 +437,55 @@ namespace sc {
                 original = std::make_unique<image>(input);
                 const auto regions = detector.detect(*original);
                 const auto text_images = detector.text_images(*original, regions);
-                std::vector<image> orientation_images;
-                orientation_images.reserve(text_images.size() * 2);
-                for (const auto &text_image: text_images) {
-                    orientation_images.push_back(text_image);
-                    auto &upside_down = orientation_images.emplace_back(text_image);
-                    upside_down.rotate(180);
+                // Each line is read the way up the line classifier says, or both ways (keeping the
+                // more confident reading) when it isn't sure.
+                const auto ways = orientations(text_images);
+                std::vector<image> readings;
+                readings.reserve(text_images.size() * 2);
+                constexpr size_t not_read = static_cast<size_t>(-1);
+                std::vector<std::pair<size_t, size_t> > reading_of(text_images.size(), {not_read, not_read});
+                for (size_t i = 0; i < text_images.size(); ++i) {
+                    if (ways[i] != line_orientation::upside_down) {
+                        reading_of[i].first = readings.size();
+                        readings.push_back(text_images[i]);
+                    }
+                    if (ways[i] != line_orientation::upright) {
+                        reading_of[i].second = readings.size();
+                        readings.emplace_back(text_images[i]).rotate(180);
+                    }
                 }
-                const auto recognized_images = recognizer.recognize(orientation_images);
+                auto recognized_readings = recognizer.recognize(readings);
+
+                // A line read one way only that reads poorly may have been turned the other way:
+                // the classifier is wrong on some short lines. Read those the other way too.
+                std::vector<image> rereadings;
+                std::vector<size_t> reread;
+                for (size_t i = 0; i < text_images.size(); ++i) {
+                    auto &[forward, upside_down] = reading_of[i];
+                    if (forward != not_read && upside_down != not_read) continue;
+                    const size_t read = forward != not_read ? forward : upside_down;
+                    if (recognized_readings[read].confidence >= RereadBelow) continue;
+                    reread.push_back(i);
+                    rereadings.emplace_back(text_images[i]);
+                    if (forward != not_read) rereadings.back().rotate(180);
+                }
+                if (!rereadings.empty()) {
+                    auto other_way = recognizer.recognize(rereadings);
+                    for (size_t r = 0; r < reread.size(); ++r) {
+                        auto &[forward, upside_down] = reading_of[reread[r]];
+                        (forward == not_read ? forward : upside_down) = recognized_readings.size();
+                        recognized_readings.push_back(std::move(other_way[r]));
+                    }
+                }
+
                 for (size_t i = 0; i < regions.size(); ++i) {
-                    const auto &forward = recognized_images[i * 2];
-                    const auto &upside_down = recognized_images[i * 2 + 1];
-                    const auto &recognized = upside_down.confidence > forward.confidence ? upside_down : forward;
+                    const auto [forward, upside_down] = reading_of[i];
+                    const auto &recognized = forward == not_read
+                                                 ? recognized_readings[upside_down]
+                                                 : upside_down == not_read ||
+                                                   recognized_readings[forward].confidence >= recognized_readings[upside_down].confidence
+                                                       ? recognized_readings[forward]
+                                                       : recognized_readings[upside_down];
                     if (recognized.text.empty() || recognized.confidence < minimum_confidence) continue;
                     lines_.push_back({
                         recognized.text, recognized.confidence, static_cast<rect>(regions[i])
@@ -480,7 +539,30 @@ namespace sc {
             }
 
         private:
+            enum class line_orientation { upright, upside_down, unsure };
+
+            // How each line image is turned, from PaddleOCR's text line orientation classifier:
+            // 160 x 80 pixels in, ImageNet-normalised; out, how likely upright and upside down.
+            [[nodiscard]] std::vector<line_orientation> orientations(const std::vector<image> &lines) const {
+                std::vector<line_orientation> result(lines.size(), line_orientation::unsure);
+                if (!line_classifier || lines.empty()) return result;
+                std::vector<image> inputs;
+                inputs.reserve(lines.size());
+                for (const auto &line: lines) inputs.push_back(line.resized({160, 80}));
+                const auto outputs = line_classifier->process_images(inputs, DetectionScale, DetectionMean);
+                if (outputs.size() != 1 || outputs.front().shape.size() != 2 ||
+                    outputs.front().shape[0] != static_cast<int64_t>(lines.size()) || outputs.front().shape[1] != 2)
+                    return result;
+                const float *scores = outputs.front().data;
+                for (size_t i = 0; i < lines.size(); ++i) {
+                    if (scores[i * 2] >= LineOrientationSure) result[i] = line_orientation::upright;
+                    else if (scores[i * 2 + 1] >= LineOrientationSure) result[i] = line_orientation::upside_down;
+                }
+                return result;
+            }
+
             ocr_detector detector;
+            std::unique_ptr<onnx> line_classifier; // null: read every line both ways
             ocr_recognizer recognizer;
             std::unique_ptr<image> original;
             std::vector<ocr::line> lines_;
