@@ -14,8 +14,8 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 
 # The demos use sc::console subheadings and SC_SHOW with commas (1.5.15).
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.15)
-find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.21)
+find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image 1.2.8)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
@@ -85,7 +85,7 @@ add_sc_example(sc-ai-identity)
 ############
 # Binaries #
 ############
-find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db 1.2.0) # pgsql.h: 1.2.0
+find_or_install_package(sc-db simply-cpp-db-dev simply-cpp-db 1.2.1)
 
 #add_executable(load-faces apps/load-faces.cpp)
 #target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
@@ -103,5 +103,5 @@ target_link_libraries(run-ocr PRIVATE sc::sc-ai)
 #############
 package_sc_module(
         DEPENDS simply-cpp-onnxruntime simply-cpp-models
-        DEV_DEPENDS simply-cpp-dev simply-cpp-image-dev simply-cpp-onnxruntime simply-cpp-models
+        DEV_DEPENDS "simply-cpp-dev (>= 1.5.21~)" "simply-cpp-image-dev (>= 1.2.8~)" simply-cpp-onnxruntime simply-cpp-models
 )
