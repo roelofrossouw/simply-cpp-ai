@@ -1,6 +1,32 @@
 #include "ocr.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+
+#include <svg2png.h>
 #include <sc_test.h>
+
+namespace {
+    // A white page, width pixels wide, with three lines of black text scaled to suit.
+    std::string invoice_page(const int width, const bool with_text = true) {
+        const int font_size = width * 24 / 640;
+        std::string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + std::to_string(width) +
+                          "\" height=\"" + std::to_string(font_size * 8) + "\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/>";
+        if (with_text) {
+            svg += "<g font-family=\"Arial, Helvetica, DejaVu Sans, Liberation Sans, sans-serif\" font-size=\"" +
+                    std::to_string(font_size) + "\">";
+            const char *lines[] = {"Invoice 2026-0142", "Total due: R 1 250.00", "Due date: 2026-10-31"};
+            for (int i = 0; i < 3; ++i)
+                svg += "<text x=\"" + std::to_string(font_size) + "\" y=\"" + std::to_string(font_size * 2 * (i + 1)) +
+                        "\">" + lines[i] + "</text>";
+            svg += "</g>";
+        }
+        return svg + "</svg>";
+    }
+}
+
 int main() {
     SECTION("Recognises text and returns positioned lines");
     {
@@ -90,6 +116,27 @@ int main() {
         for (const auto &result: filtered) CHECK(result.confidence >= recognition_threshold);
         CHECK_THROWS_AS(recognizer.set_threshold(-1), std::invalid_argument);
         CHECK_THROWS_AS(recognizer.set_threshold(101), std::invalid_argument);
+    }
+
+    SECTION("Reads a few lines of clean text whole and in reading order, at any size");
+    {
+        // A page with fewer text regions than the noise filter's neighbour count used to come back
+        // empty, and large text came back word by word in a shuffled order.
+        sc::ocr reader;
+        const auto path = (std::filesystem::temp_directory_path() / "sc-ai-test-ocr-page.png").string();
+        for (const int width: {480, 640, 1600}) {
+            const auto png = sc::svg2png::FromString(invoice_page(width));
+            // Rendering text needs a system font; without one the page stays blank.
+            if (png.size() < sc::svg2png::FromString(invoice_page(width, false)).size() + 1000) {
+                std::cout << "   (no font to render text with: skipped)" << std::endl;
+                break;
+            }
+            std::ofstream{path, std::ios::binary} << png;
+            reader.detect(std::filesystem::path{path});
+            CHECK_MSG(reader.text() == "Invoice 2026-0142\nTotal due: R 1 250.00\nDue date: 2026-10-31",
+                      "at " + std::to_string(width) + " px, read \"" + reader.text() + '"');
+        }
+        std::filesystem::remove(path);
     }
 
     SECTION("Rejects missing input");
