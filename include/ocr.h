@@ -74,6 +74,10 @@ namespace sc {
         /// Recognises cropped text images in a batch.
         [[nodiscard]] std::vector<result> recognize(const std::vector<image> &inputs) const;
 
+        /// Recognises cropped text images stretched horizontally by stretch first: for tightly
+        /// spaced text such as an MRZ, whose double letters can otherwise merge into one.
+        [[nodiscard]] std::vector<result> recognize(const std::vector<image> &inputs, double stretch) const;
+
     private:
         impl::ocr_recognizer_impl *impl;
     };

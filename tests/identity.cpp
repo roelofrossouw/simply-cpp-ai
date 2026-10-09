@@ -113,5 +113,34 @@ int main() {
         }
     }
 
+    SECTION("A passport's heading is never read as a name");
+    {
+        // Made up. Without an MRZ the names come from the labels; the bilingual heading, a word
+        // the length of a name in capitals, was taken for them.
+        const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"520\">"
+                           "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>"
+                           "<g font-family=\"Arial, Helvetica, DejaVu Sans, Liberation Sans, sans-serif\">"
+                           "<text x=\"40\" y=\"70\" font-size=\"34\">PASSPORT PASPOORT PASSEPORT PASAPORTE</text>"
+                           "<text x=\"40\" y=\"150\" font-size=\"18\">Surname / Van</text>"
+                           "<text x=\"40\" y=\"185\" font-size=\"28\">SAMPLESON</text>"
+                           "<text x=\"40\" y=\"250\" font-size=\"18\">Given names / Voorname</text>"
+                           "<text x=\"40\" y=\"285\" font-size=\"28\">ALEX JORDAN</text>"
+                           "<text x=\"40\" y=\"350\" font-size=\"18\">Nationality / Nasionaliteit</text>"
+                           "<text x=\"40\" y=\"385\" font-size=\"28\">SOUTH AFRICAN</text>"
+                           "<text x=\"40\" y=\"450\" font-size=\"18\">Identity No.</text>"
+                           "<text x=\"40\" y=\"485\" font-size=\"28\">" + string{VALID} + "</text></g></svg>";
+        const auto png = sc::svg2png::FromString(svg);
+        if (png.size() < 3000) {
+            cout << "   (no font to render text with: skipped)" << endl;
+        } else {
+            const auto path = (filesystem::temp_directory_path() / "sc-ai-test-passport-page.png").string();
+            ofstream{path, ios::binary} << png;
+            const sc::identity page{filesystem::path{path}};
+            filesystem::remove(path);
+            CHECK_EQ(page.surname(), string{"SAMPLESON"});
+            CHECK_EQ(page.names(), string{"ALEX JORDAN"});
+        }
+    }
+
     TEST_SUMMARY();
 }
