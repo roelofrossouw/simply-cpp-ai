@@ -19,6 +19,15 @@ namespace sc {
         namespace {
             const fs::path model_dir{SIMPLY_CPP_MODEL_DIR};
             constexpr double AngleEpsilon = 10.0;
+            // The detector reads text best when it is about TypicalTextHeight pixels tall in its
+            // text map (which marks a narrow core of each line). Much larger, it sees the gaps between
+            // words as wide as columns and returns words rather than lines, so text taller than
+            // MaximumTextHeight is looked at again, scaled down. Inputs are first limited to
+            // MaximumDetectionSide pixels on the longer side - PaddleOCR limits its own the same way
+            // (det_limit_side_len) - which also keeps detection on large photos quick.
+            constexpr int MaximumDetectionSide = 1280;
+            constexpr double MaximumTextHeight = 14;
+            constexpr double TypicalTextHeight = 11;
 
             fs::path find_dictionary(const std::string &recognition_model, const fs::path &dictionary) {
                 if (!dictionary.empty()) {
@@ -57,16 +66,23 @@ namespace sc {
                 return angle;
             }
 
+            // Drops regions whose angle or height doesn't match any group of others: specks and
+            // lines on a busy document. A page with only a few regions gives DBSCAN too little to
+            // go on - with fewer regions than minimum_neighbors every one would be noise - so the
+            // neighbour count is capped at the number of regions, and when no group forms at all,
+            // nothing is dropped.
             std::vector<rotated_rect> likely_text_rectangles(const std::vector<rotated_rect> &rectangles,
                                                              const size_t minimum_neighbors,
                                                              const double maximum_height_difference) {
+                if (rectangles.empty()) return {};
+                const size_t neighbors = std::min(minimum_neighbors, rectangles.size());
                 std::vector<double> angles;
                 angles.reserve(rectangles.size());
                 for (const auto &rectangle: rectangles) angles.push_back(normalized_angle(rectangle.angle()));
-                const auto angle_labels = dbscan(angles, AngleEpsilon, minimum_neighbors, 180);
-                const int angle_cluster_count = angle_labels.empty()
-                                                    ? 0
-                                                    : *std::ranges::max_element(angle_labels) + 1;
+                const auto angle_labels = dbscan(angles, AngleEpsilon, neighbors, 180);
+                const int angle_cluster_count = *std::ranges::max_element(angle_labels) + 1;
+                if (angle_cluster_count == 0) return rectangles;
+
                 std::vector<bool> keep(rectangles.size());
                 for (int angle_cluster = 0; angle_cluster < angle_cluster_count; ++angle_cluster) {
                     std::vector<size_t> members;
@@ -76,18 +92,12 @@ namespace sc {
                         members.push_back(i);
                         heights.push_back(rectangles[i].height());
                     }
-                    if (members.size() < minimum_neighbors) continue;
 
-                    const auto height_labels = dbscan(heights, maximum_height_difference, minimum_neighbors);
-                    const int height_cluster_count = height_labels.empty()
-                                                         ? 0
-                                                         : *std::ranges::max_element(height_labels) + 1;
-                    for (int height_cluster = 0; height_cluster < height_cluster_count; ++height_cluster) {
-                        for (size_t i = 0; i < height_labels.size(); ++i) {
-                            if (height_labels[i] != height_cluster) continue;
-                            keep[members[i]] = true;
-                        }
-                    }
+                    const auto height_labels = dbscan(heights, maximum_height_difference,
+                                                      std::min(neighbors, members.size()));
+                    const bool any_height_cluster = *std::ranges::max_element(height_labels) >= 0;
+                    for (size_t i = 0; i < height_labels.size(); ++i)
+                        if (height_labels[i] >= 0 || !any_height_cluster) keep[members[i]] = true;
                 }
 
                 std::vector<rotated_rect> result;
@@ -127,6 +137,28 @@ namespace sc {
                 };
             }
 
+            // Top to bottom, then left to right within a row. Sorting on the top edge alone puts
+            // a word a pixel higher first, so regions whose centres lie within half a height of a
+            // row's first region share that row and are ordered by their left edge.
+            std::vector<rotated_rect> in_reading_order(std::vector<rotated_rect> regions) {
+                std::ranges::sort(regions, {}, [](const rotated_rect &region) { return region.center().y(); });
+                std::vector<rotated_rect> ordered;
+                ordered.reserve(regions.size());
+                for (auto row_start = regions.begin(); row_start != regions.end();) {
+                    const double row_y = row_start->center().y();
+                    const double tolerance = static_cast<rect>(*row_start).height() / 2;
+                    auto row_end = std::find_if(row_start, regions.end(), [&](const rotated_rect &region) {
+                        return region.center().y() - row_y > tolerance;
+                    });
+                    std::sort(row_start, row_end, [](const rotated_rect &lhs, const rotated_rect &rhs) {
+                        return static_cast<rect>(lhs).left() < static_cast<rect>(rhs).left();
+                    });
+                    ordered.insert(ordered.end(), row_start, row_end);
+                    row_start = row_end;
+                }
+                return ordered;
+            }
+
             void validate_minimum_confidence(const double minimum_confidence) {
                 if (!std::isfinite(minimum_confidence) || minimum_confidence < 0 || minimum_confidence > 100)
                     throw std::invalid_argument{"OCR minimum confidence must be finite and between 0 and 100"};
@@ -159,43 +191,72 @@ namespace sc {
 
             [[nodiscard]] std::vector<rotated_rect> detect(const image &input) const {
                 if (input.empty()) throw std::invalid_argument{"Cannot detect text in an empty image"};
-                image detector_input{input};
-                detector_input.snap_to_size(32, {detector_input.size()});
-
-                const auto outputs = detector.process_image(detector_input);
-                if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
-                    outputs.front().shape[0] != 1 || outputs.front().shape[1] != 1)
-                    throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
-
-                const auto &output = outputs.front();
-                const size_i map_size{static_cast<int>(output.shape[3]), static_cast<int>(output.shape[2])};
-                if (map_size.width() <= 0 || map_size.height() <= 0)
-                    throw std::runtime_error{"PaddleOCR detection model returned an invalid map size"};
-
-                image probability_map = image::from_blob(output.data, map_size.width(), map_size.height(), 1);
-                probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
-                auto rectangles = probability_map.find_min_area_rects(500);
-                rectangles = likely_text_rectangles(rectangles, minimum_neighbors_, maximum_height_difference_);
+                const int longest_side = std::max(input.size().width(), input.size().height());
+                const double scale = std::min(1.0, static_cast<double>(MaximumDetectionSide) / longest_side);
+                auto found = find_regions(input, scale);
+                // Large text is found word by word: look again at the scale the model reads best.
+                if (const double height = median_height(found.regions); height > MaximumTextHeight) {
+                    auto rescaled = find_regions(input, scale * TypicalTextHeight / height);
+                    if (!rescaled.regions.empty()) found = std::move(rescaled);
+                }
+                const auto rectangles = likely_text_rectangles(found.regions, minimum_neighbors_, maximum_height_difference_);
 
                 std::vector<rotated_rect> result;
                 result.reserve(rectangles.size());
                 for (const auto &bounds: rectangles) {
-                    const auto mapped = map_to_original(bounds, detector_input, input, map_size);
+                    const auto mapped = map_to_original(bounds, found.detector_input, input, found.map_size);
                     result.emplace_back(
                         mapped.center(),
                         size{mapped.width() + mapped.height() * 2, mapped.height() * 2},
                         mapped.angle());
                 }
-                std::ranges::sort(result, [](const rotated_rect &lhs, const rotated_rect &rhs) {
-                    const auto lhs_box = static_cast<rect>(lhs);
-                    const auto rhs_box = static_cast<rect>(rhs);
-                    if (lhs_box.top() != rhs_box.top()) return lhs_box.top() < rhs_box.top();
-                    return lhs_box.left() < rhs_box.left();
-                });
-                return result;
+                return in_reading_order(std::move(result));
             }
 
         private:
+            // What the model found in the input scaled by scale: text regions in the coordinates of
+            // its text map, with what's needed to map them back to the input.
+            struct detection {
+                image detector_input;
+                size_i map_size;
+                std::vector<rotated_rect> regions;
+            };
+
+            [[nodiscard]] detection find_regions(const image &input, const double scale) const {
+                detection found{input, {}, {}};
+                if (scale < 1) {
+                    found.detector_input.resize_to({
+                        std::max(1, static_cast<int>(std::lround(input.size().width() * scale))),
+                        std::max(1, static_cast<int>(std::lround(input.size().height() * scale)))
+                    });
+                }
+                found.detector_input.snap_to_size(32, {found.detector_input.size()});
+
+                const auto outputs = detector.process_image(found.detector_input);
+                if (outputs.size() != 1 || outputs.front().shape.size() != 4 ||
+                    outputs.front().shape[0] != 1 || outputs.front().shape[1] != 1)
+                    throw std::runtime_error{"PaddleOCR detection model must return a [1, 1, height, width] map"};
+
+                const auto &output = outputs.front();
+                found.map_size = {static_cast<int>(output.shape[3]), static_cast<int>(output.shape[2])};
+                if (found.map_size.width() <= 0 || found.map_size.height() <= 0)
+                    throw std::runtime_error{"PaddleOCR detection model returned an invalid map size"};
+
+                image probability_map = image::from_blob(output.data, found.map_size.width(), found.map_size.height(), 1);
+                probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
+                found.regions = probability_map.find_min_area_rects(500);
+                return found;
+            }
+
+            static double median_height(const std::vector<rotated_rect> &regions) {
+                if (regions.empty()) return 0;
+                std::vector<double> heights;
+                heights.reserve(regions.size());
+                for (const auto &region: regions) heights.push_back(region.height());
+                std::ranges::nth_element(heights, heights.begin() + heights.size() / 2);
+                return heights[heights.size() / 2];
+            }
+
             onnx detector;
             percent threshold_{50, 2};
             size_t minimum_neighbors_{5};

@@ -21,12 +21,12 @@ int main(int argc, char **argv) {
             sc::console::output() << "No image given (sc-ai-ocr <image>), so rendering a few lines of text\n";
             source = (std::filesystem::temp_directory_path() / "sc-ai-ocr.png").string();
             std::ofstream{source, std::ios::binary} << sc::svg2png::FromString(
-                R"(<svg xmlns="http://www.w3.org/2000/svg" width="800" height="275" viewBox="0 0 640 220">)"
+                R"(<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220">)"
                 R"(<rect width="640" height="220" fill="white"/>)"
                 R"(<g font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="30">)"
                 R"(<text x="30" y="60">Invoice 2026-0142</text>)"
                 R"(<text x="30" y="120">Total due: R 1 250.00</text>)"
-                R"(<text x="30" y="180">Pay by 31 October 2026</text></g></svg>)");
+                R"(<text x="30" y="180">Due date: 2026-10-31</text></g></svg>)");
         }
         sc::timer sw;
 
