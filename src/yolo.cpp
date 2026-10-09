@@ -136,6 +136,10 @@ namespace sc {
         return impl->annotated().show(timeout);
     }
 
+    std::string yolo::object_name(const int type) {
+        return (type < 0 || type >= static_cast<int>(impl::kCocoNames.size())) ? "unknown" : impl::kCocoNames[type];
+    }
+
     nlohmann::ordered_json yolo::to_json() {
         return impl->json();
     }
