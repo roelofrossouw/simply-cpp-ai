@@ -91,7 +91,7 @@ PaddleOCR is available through `sc::ocr`. It detects text regions, recognises ea
 ```cpp
 #include <ocr.h>
 
-sc::ocr reader; // Uses paddle_det_s and paddle_rec_s from simply-cpp-models
+sc::ocr reader; // paddle_det_monkt_5 and paddle_rec_monkt_latin from simply-cpp-models
 reader.detect("document.jpg");
 std::cout << reader.text() << std::endl;
 std::cout << reader.to_json().dump(2) << std::endl;
@@ -99,7 +99,15 @@ std::cout << reader.to_json().dump(2) << std::endl;
 
 Use the optional constructor arguments to select detection and recognition models, and an optional third path for a custom recognition dictionary. `reader.lines()` returns the recognised line records directly; `reader.display()` shows the source image with text boxes.
 
-`sc::identity` passes the original image to the same PaddleOCR engine and bundled English models, then parses its output for document fields. It does not add preprocessing or retries. Tesseract is no longer required; identity recognition remains English-only.
+How it reads a page:
+
+- **Upright first.** Since 1.6.0, `detect()` turns the image upright with PaddleOCR's document orientation classifier (`paddle_rotate`) before reading, so a photo taken sideways or upside down reads as text rather than noise. Boxes are still in the given image's coordinates; `reader.rotation()` says how far it was turned, `sc::ocr::upright_rotation(image)` gives the same answer on its own, and `reader.set_auto_rotate(false)` reads the image as given. Results on such photos differ from earlier versions.
+- **Detection** scales the image to at most 1280 pixels on the longer side, looks again at a better scale when the text is very large or very small (small text in a large image is read in overlapping tiles), grows each region back to cover the whole line, and turns short regions (a lone letter) to the page's text direction.
+- **Recognition** reads every line the same way up as most of the page, using a text line orientation classifier (`paddle_line_rotate`); a line is also read the other way only when that is clearly better.
+
+Without the two classifier models (an older simply-cpp-models) it falls back to reading every line both ways.
+
+`sc::identity` uses the same engine and models: it turns the photo upright, reads it, and parses the lines for document fields, trying the photo turned a quarter either way only when fields are missing. Tesseract is no longer required; identity recognition remains English-only.
 
 Pass `true` as the second argument to also detect face embeddings from the original image. The embeddings are available through `faces()` and are included in JSON only when face detection was requested:
 
