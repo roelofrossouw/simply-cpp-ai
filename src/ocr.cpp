@@ -6,6 +6,7 @@
 #include <dbscan.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <memory>
@@ -43,8 +44,12 @@ namespace sc {
             // read only that way up (otherwise it is read both ways, which takes twice as long).
             const std::string LineOrientationModel = "paddle_line_rotate.onnx";
             constexpr float LineOrientationSure = 0.9f;
-            // A line read one way only is read the other way as well when it reads below this.
+            // A line is read the other way as well when it reads below this, and that reading is
+            // taken when it is at least OtherWayMargin points more confident. (A run of MRZ fillers read
+            // upside down as > could come out 5 to 10 points ahead; a line really upside down reads
+            // far worse the wrong way.)
             constexpr double RereadBelow = 98;
+            constexpr double OtherWayMargin = 15;
             // A region this many times longer than tall is clearly a line, and shows the page's text
             // direction; one less than ShortRegionAspect long is short enough to be turned to it.
             constexpr double LongRegionAspect = 3;
@@ -52,6 +57,8 @@ namespace sc {
             // 1.5; 2 covered whole lines best in testing, line ends included).
             constexpr double UnclipRatio = 2;
             constexpr double ShortRegionAspect = 2;
+            // Pieces of one line closer than this many of their heights in the text map are joined.
+            constexpr double JoinGapHeights = 1.5;
             // Smaller regions in the text map are dropped as specks. Small enough to keep a lone
             // letter - the M or F under an identity card's Sex label - which 500 lost.
             constexpr double MinimumRegionArea = 50;
@@ -165,15 +172,34 @@ namespace sc {
             // text: it was then dropped as noise among the page's lines, or read sideways. Short
             // regions are turned to run the way the page's text does: the median direction of its
             // clearly long regions (or level, without any). Their width can then be the shorter side.
-            std::vector<rotated_rect> along_text_direction(std::vector<rotated_rect> regions) {
-                std::vector<double> long_directions;
-                for (const auto &region: regions)
-                    if (region.width() >= region.height() * LongRegionAspect) long_directions.push_back(normalized_angle(region.angle()));
-                double direction = 0;
-                if (!long_directions.empty()) {
-                    std::ranges::nth_element(long_directions, long_directions.begin() + long_directions.size() / 2);
-                    direction = long_directions[long_directions.size() / 2];
+            // The page's text direction, 0 to 180 degrees: the most common direction of its clearly
+            // long regions (or level, without any) - a few sideways lines along an edge don't pull
+            // it over. Directions repeat every 180 degrees, so 179 and 1 count as neighbours.
+            double text_direction(const std::vector<rotated_rect> &regions) {
+                constexpr int bins = 36; // 5 degrees each
+                std::array<double, bins> weight{};
+                for (const auto &region: regions) {
+                    if (region.width() < region.height() * LongRegionAspect) continue;
+                    weight[static_cast<int>(normalized_angle(region.angle()) / 5) % bins] += region.width();
                 }
+                const auto peak = static_cast<int>(std::ranges::max_element(weight) - weight.begin());
+                if (weight[peak] == 0) return 0;
+                // The weighted mean of the directions near the peak, as unit vectors of the doubled angle.
+                double x = 0, y = 0;
+                const double centre = peak * 5 + 2.5;
+                for (const auto &region: regions) {
+                    if (region.width() < region.height() * LongRegionAspect) continue;
+                    const double away = std::fmod(std::abs(normalized_angle(region.angle()) - centre), 180.0);
+                    if (std::min(away, 180 - away) > 15) continue;
+                    const double doubled = 2 * region.angle() * std::numbers::pi / 180.0;
+                    x += region.width() * std::cos(doubled);
+                    y += region.width() * std::sin(doubled);
+                }
+                return normalized_angle(std::atan2(y, x) / 2 * 180.0 / std::numbers::pi);
+            }
+
+            std::vector<rotated_rect> along_text_direction(std::vector<rotated_rect> regions) {
+                const double direction = text_direction(regions);
                 for (auto &region: regions) {
                     const double longer = std::max(region.width(), region.height());
                     const double shorter = std::max(1e-9, std::min(region.width(), region.height()));
@@ -181,6 +207,50 @@ namespace sc {
                     const double across = std::fmod(std::abs(normalized_angle(region.angle()) - direction), 180.0);
                     if (std::min(across, 180 - across) <= 45) continue;
                     region = {region.center(), size{region.height(), region.width()}, normalized_angle(region.angle() + 90)};
+                }
+                return regions;
+            }
+
+            // Pieces of one line that the map left apart - an MRZ line's run of fillers came out as a
+            // region of its own - are joined: regions running the same way, about as tall, in line
+            // with each other and less than JoinGapHeights of their height apart. Separate columns
+            // are much further apart than that.
+            std::vector<rotated_rect> joined_line_pieces(std::vector<rotated_rect> regions) {
+                const auto same_line = [](const rotated_rect &a, const rotated_rect &b, double &u, double &v) {
+                    const double across = std::fmod(std::abs(normalized_angle(a.angle()) - normalized_angle(b.angle())), 180.0);
+                    if (std::min(across, 180 - across) > 5) return false;
+                    const double height = std::max(a.height(), b.height());
+                    if (std::min(a.height(), b.height()) < height * 0.6) return false;
+                    const double radians = a.angle() * std::numbers::pi / 180.0;
+                    const double dx = b.center().x() - a.center().x(), dy = b.center().y() - a.center().y();
+                    u = dx * std::cos(radians) + dy * std::sin(radians);
+                    v = -dx * std::sin(radians) + dy * std::cos(radians);
+                    if (std::abs(v) > height * 0.3) return false;
+                    return std::abs(u) - (a.width() + b.width()) / 2 <= height * JoinGapHeights;
+                };
+                for (bool joined = true; joined;) {
+                    joined = false;
+                    for (size_t i = 0; i < regions.size() && !joined; ++i) {
+                        for (size_t j = i + 1; j < regions.size() && !joined; ++j) {
+                            double u = 0, v = 0;
+                            const auto &a = regions[i], &b = regions[j];
+                            if (!same_line(a, b, u, v)) continue;
+                            // Both in a's frame: a spans -w/2..w/2 along it, b centres at (u, v).
+                            const double along_from = std::min(-a.width() / 2, u - b.width() / 2);
+                            const double along_to = std::max(a.width() / 2, u + b.width() / 2);
+                            const double across_from = std::min(-a.height() / 2, v - b.height() / 2);
+                            const double across_to = std::max(a.height() / 2, v + b.height() / 2);
+                            const double mid_u = (along_from + along_to) / 2, mid_v = (across_from + across_to) / 2;
+                            const double radians = a.angle() * std::numbers::pi / 180.0;
+                            regions[i] = {
+                                point{a.center().x() + mid_u * std::cos(radians) - mid_v * std::sin(radians),
+                                      a.center().y() + mid_u * std::sin(radians) + mid_v * std::cos(radians)},
+                                size{along_to - along_from, across_to - across_from}, a.angle()
+                            };
+                            regions.erase(regions.begin() + static_cast<std::ptrdiff_t>(j));
+                            joined = true;
+                        }
+                    }
                 }
                 return regions;
             }
@@ -211,6 +281,22 @@ namespace sc {
                 if (!std::isfinite(minimum_confidence) || minimum_confidence < 0 || minimum_confidence > 100)
                     throw std::invalid_argument{"OCR minimum confidence must be finite and between 0 and 100"};
             }
+        }
+
+        // The model puts a space before some hyphens and apostrophes inside a word or number
+        // (1994 -04, ANNA -MARIE, O 'NEILL): drop a space between a letter or digit and a hyphen
+        // or apostrophe joined to what follows. One with spaces on both sides (a - b) stays.
+        static std::string without_stray_spaces(const std::string &text) {
+            const auto alnum = [](const char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; };
+            std::string result;
+            result.reserve(text.size());
+            for (size_t i = 0; i < text.size(); ++i) {
+                if (text[i] == ' ' && i > 0 && i + 2 < text.size() && alnum(text[i - 1]) &&
+                    (text[i + 1] == '-' || text[i + 1] == '\'') && alnum(text[i + 2]))
+                    continue;
+                result += text[i];
+            }
+            return result;
         }
 
         class ocr_detector_impl {
@@ -251,7 +337,7 @@ namespace sc {
                     auto rescaled = find_regions(input, better);
                     if (!rescaled.regions.empty()) found = std::move(rescaled);
                 }
-                const auto rectangles = likely_text_rectangles(along_text_direction(std::move(found.regions)),
+                const auto rectangles = likely_text_rectangles(joined_line_pieces(along_text_direction(std::move(found.regions))),
                                                                minimum_neighbors_, maximum_height_difference_);
 
                 std::vector<rotated_rect> result;
@@ -262,7 +348,15 @@ namespace sc {
                     const double w = bounds.width(), h = bounds.height();
                     const double margin = w * h * UnclipRatio / (2 * (w + h));
                     const rotated_rect grown{bounds.center(), size{w + 2 * margin, h + 2 * margin}, bounds.angle()};
-                    result.push_back(map_to_original(grown, found.detector_input, input, found.map_size));
+                    auto mapped = map_to_original(grown, found.detector_input, input, found.map_size);
+                    // Within 90 degrees of level, so an upright page's lines are all cut out the same
+                    // way up: kept between 0 and 180 degrees, a line tilted a little anticlockwise,
+                    // at 179, was cut out upside down. (sc::ocr turns the image upright first.)
+                    double angle = mapped.angle();
+                    while (angle > 90) angle -= 180;
+                    while (angle <= -90) angle += 180;
+                    mapped.angle(angle);
+                    result.push_back(mapped);
                 }
                 return in_reading_order(std::move(result));
             }
@@ -461,6 +555,7 @@ namespace sc {
                     result.text += characters[decoded_classes[i]];
                 }
                 if (recognized_characters) result.confidence = {confidence_sum / recognized_characters * 100.0, 2};
+                result.text = without_stray_spaces(result.text);
                 return result;
             }
 
@@ -499,64 +594,64 @@ namespace sc {
                 run(input, minimum_confidence);
             }
 
+            void set_auto_rotate(const bool value) { auto_rotate = value; }
+
+            [[nodiscard]] int rotation() const noexcept { return rotation_; }
+
             void run(const image &input, const double minimum_confidence) {
                 validate_minimum_confidence(minimum_confidence);
                 lines_.clear();
                 original = std::make_unique<image>(input);
-                const auto regions = detector.detect(*original);
-                const auto text_images = detector.text_images(*original, regions);
-                // Each line is read the way up the line classifier says, or both ways (keeping the
-                // more confident reading) when it isn't sure.
+                // Read upright: then all of a page's lines are cut out the same way up.
+                rotation_ = auto_rotate ? ocr::upright_rotation(input) : 0;
+                image upright{input};
+                if (rotation_) upright.rotate(rotation_);
+                const auto regions = detector.detect(upright);
+                const auto text_images = detector.text_images(upright, regions);
+                // Lines on a page nearly always run the same way: each is read the way most of the
+                // page's lines are classified. Only when the classifier is sure a line runs the other
+                // way, or its reading is weak, is it read the other way as well, and that reading has
+                // to be clearly better. (Deciding per line, a run of MRZ fillers - which reads about as
+                // well upside down, < turned over being > - went whichever way was a shade more sure.)
                 const auto ways = orientations(text_images);
-                std::vector<image> readings;
-                readings.reserve(text_images.size() * 2);
-                constexpr size_t not_read = static_cast<size_t>(-1);
-                std::vector<std::pair<size_t, size_t> > reading_of(text_images.size(), {not_read, not_read});
-                for (size_t i = 0; i < text_images.size(); ++i) {
-                    if (ways[i] != line_orientation::upside_down) {
-                        reading_of[i].first = readings.size();
-                        readings.push_back(text_images[i]);
-                    }
-                    if (ways[i] != line_orientation::upright) {
-                        reading_of[i].second = readings.size();
-                        readings.emplace_back(text_images[i]).rotate(180);
-                    }
-                }
-                auto recognized_readings = recognizer.recognize(readings);
+                const auto upright_lines = std::ranges::count(ways, line_orientation::upright);
+                const auto upside_down_lines = std::ranges::count(ways, line_orientation::upside_down);
+                const bool page_upside_down = upside_down_lines > upright_lines;
+                const auto against_page = page_upside_down ? line_orientation::upright : line_orientation::upside_down;
 
-                // A line read one way only that reads poorly may have been turned the other way:
-                // the classifier is wrong on some short lines. Read those the other way too.
-                std::vector<image> rereadings;
-                std::vector<size_t> reread;
-                for (size_t i = 0; i < text_images.size(); ++i) {
-                    auto &[forward, upside_down] = reading_of[i];
-                    if (forward != not_read && upside_down != not_read) continue;
-                    const size_t read = forward != not_read ? forward : upside_down;
-                    if (recognized_readings[read].confidence >= RereadBelow) continue;
-                    reread.push_back(i);
-                    rereadings.emplace_back(text_images[i]);
-                    if (forward != not_read) rereadings.back().rotate(180);
+                std::vector<image> page_way;
+                page_way.reserve(text_images.size());
+                for (const auto &text_image: text_images) {
+                    page_way.push_back(text_image);
+                    if (page_upside_down) page_way.back().rotate(180);
                 }
-                if (!rereadings.empty()) {
-                    auto other_way = recognizer.recognize(rereadings);
-                    for (size_t r = 0; r < reread.size(); ++r) {
-                        auto &[forward, upside_down] = reading_of[reread[r]];
-                        (forward == not_read ? forward : upside_down) = recognized_readings.size();
-                        recognized_readings.push_back(std::move(other_way[r]));
-                    }
+                const auto page_readings = recognizer.recognize(page_way);
+                std::vector<image> other_way;
+                std::vector<size_t> other_of;
+                for (size_t i = 0; i < text_images.size(); ++i) {
+                    if (ways[i] != against_page && page_readings[i].confidence >= RereadBelow) continue;
+                    // One or two characters can't show which way up they are (an M upside down
+                    // reads as W): they go the page's way.
+                    if (!page_readings[i].text.empty() && page_readings[i].text.size() <= 2) continue;
+                    other_way.push_back(text_images[i]);
+                    if (!page_upside_down) other_way.back().rotate(180);
+                    other_of.push_back(i);
+                }
+                const auto other_readings = other_way.empty() ? std::vector<ocr_recognizer::result>{} : recognizer.recognize(other_way);
+                std::vector<const ocr_recognizer::result *> chosen(text_images.size());
+                for (size_t i = 0; i < text_images.size(); ++i) chosen[i] = &page_readings[i];
+                for (size_t r = 0; r < other_of.size(); ++r) {
+                    const size_t i = other_of[r];
+                    if (static_cast<double>(other_readings[r].confidence) >= static_cast<double>(page_readings[i].confidence) + OtherWayMargin)
+                        chosen[i] = &other_readings[r];
                 }
 
                 for (size_t i = 0; i < regions.size(); ++i) {
-                    const auto [forward, upside_down] = reading_of[i];
-                    const auto &recognized = forward == not_read
-                                                 ? recognized_readings[upside_down]
-                                                 : upside_down == not_read ||
-                                                   recognized_readings[forward].confidence >= recognized_readings[upside_down].confidence
-                                                       ? recognized_readings[forward]
-                                                       : recognized_readings[upside_down];
+                    const auto &recognized = *chosen[i];
                     if (recognized.text.empty() || recognized.confidence < minimum_confidence) continue;
                     lines_.push_back({
-                        recognized.text, recognized.confidence, static_cast<rect>(regions[i])
+                        recognized.text, recognized.confidence,
+                        unturned(static_cast<rect>(regions[i]), rotation_, input.size())
                     });
                 }
             }
@@ -607,6 +702,21 @@ namespace sc {
             }
 
         private:
+            // A box on the image turned by rotation (as image::rotate), back on the image as given.
+            static rect unturned(const rect &box, const int rotation, const size_i &given) {
+                const double w = given.width(), h = given.height();
+                switch (rotation) {
+                    case 90: // turned clockwise: (x, y) went to (h - y, x)
+                        return {box.top(), h - box.right(), box.height(), box.width()};
+                    case 180:
+                        return {w - box.right(), h - box.bottom(), box.width(), box.height()};
+                    case 270: // turned anticlockwise: (x, y) went to (y, w - x)
+                        return {w - box.bottom(), box.left(), box.height(), box.width()};
+                    default:
+                        return box;
+                }
+            }
+
             enum class line_orientation { upright, upside_down, unsure };
 
             // How each line image is turned, from PaddleOCR's text line orientation classifier:
@@ -631,6 +741,8 @@ namespace sc {
 
             ocr_detector detector;
             std::unique_ptr<onnx> line_classifier; // null: read every line both ways
+            bool auto_rotate = true;
+            int rotation_ = 0;
             ocr_recognizer recognizer;
             std::unique_ptr<image> original;
             std::vector<ocr::line> lines_;
@@ -736,6 +848,42 @@ namespace sc {
 
     void ocr::detect(const std::filesystem::path &image_path, const double minimum_confidence) const {
         impl->run(image_path, minimum_confidence);
+    }
+
+    void ocr::set_auto_rotate(const bool auto_rotate) {
+        impl->set_auto_rotate(auto_rotate);
+    }
+
+    int ocr::rotation() const {
+        return impl->rotation();
+    }
+
+    int ocr::upright_rotation(const image &input) {
+        static thread_local const std::unique_ptr<onnx> classifier = []() -> std::unique_ptr<onnx> {
+            try {
+                return std::make_unique<onnx>("paddle_rotate.onnx", false);
+            } catch (const std::exception &) {
+                return nullptr; // not installed (an older simply-cpp-models): taken as upright
+            }
+        }();
+        if (!classifier || input.empty()) return 0;
+        // The model sees the centre 224 x 224 pixels with the shorter side scaled to 256,
+        // ImageNet-normalised. Its class k means the image is turned k quarters from upright.
+        const auto size = input.size();
+        const double scale = 256.0 / std::min(size.width(), size.height());
+        const auto scaled = input.resized({
+            std::max(224, static_cast<int>(std::lround(size.width() * scale))),
+            std::max(224, static_cast<int>(std::lround(size.height() * scale)))
+        });
+        const auto scaled_size = scaled.size();
+        const auto centre = scaled.cropped(rect_i{
+            (scaled_size.width() - 224) / 2, (scaled_size.height() - 224) / 2, 224, 224
+        });
+        const auto outputs = classifier->process_image(centre, impl::DetectionScale, impl::DetectionMean);
+        if (outputs.empty() || outputs.front().shape.size() != 2 || outputs.front().shape[1] != 4) return 0;
+        const float *scores = outputs.front().data;
+        const auto quarters = static_cast<int>(std::max_element(scores, scores + 4) - scores);
+        return (4 - quarters) % 4 * 90;
     }
 
     void ocr::detect(const image &input, const double minimum_confidence) const {

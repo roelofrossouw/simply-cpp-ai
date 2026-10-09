@@ -50,40 +50,29 @@ int main() {
         reader.detect("resource/test/ID-10.jpg", 90);
         for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
 
-        const sc::image input{"resource/test/ID-10.jpg"};
-        sc::ocr_detector detector;
-        sc::ocr_recognizer recognizer;
-        const auto regions = detector.detect(input);
-        const auto text_images = detector.text_images(input, regions);
-        std::vector<sc::image> orientation_images;
-        orientation_images.reserve(text_images.size() * 2);
-        for (const auto &text_image: text_images) {
-            orientation_images.push_back(text_image);
-            auto &upside_down = orientation_images.emplace_back(text_image);
-            upside_down.rotate(180);
-        }
-        const auto recognized = recognizer.recognize(orientation_images);
-        reader.detect(input, 0);
-        std::vector<sc::ocr_recognizer::result> expected;
-        for (size_t i = 0; i < regions.size(); ++i) {
-            const auto &forward = recognized[i * 2];
-            const auto &upside_down = recognized[i * 2 + 1];
-            const auto &best = upside_down.confidence > forward.confidence ? upside_down : forward;
-            if (!best.text.empty()) expected.push_back(best);
-        }
-        CHECK_EQ(reader.lines().size(), expected.size());
-        for (size_t i = 0; i < expected.size(); ++i) {
-            CHECK_EQ(reader.lines()[i].text, expected[i].text);
-            // Lines are recognised in batches padded to their widest image, and sc::ocr batches
-            // them differently (it reads most lines one way only), so confidences differ a little.
-            CHECK_MSG(std::abs(static_cast<double>(reader.lines()[i].confidence) - static_cast<double>(expected[i].confidence)) < 5,
-                      "confidence " + std::string(reader.lines()[i].confidence) + " vs " + std::string(expected[i].confidence));
-        }
+        // The card is photographed sideways: sc::ocr reads it upright, with boxes on the image
+        // as given.
+        const sc::image given{"resource/test/ID-10.jpg"};
+        const int rotation = sc::ocr::upright_rotation(given);
+        CHECK(rotation == 90 || rotation == 270);
+        reader.detect(given, 0);
+        CHECK_EQ(reader.rotation(), rotation);
+        const auto text = reader.text();
+        for (const char *expected: {"REPUBLIC OF SOUTH AFRICA", "NATIONAL IDENTITY CARD", "LUCAS", "MASANGO"})
+            CHECK_MSG(text.find(expected) != std::string::npos, std::string{"expected "} + expected);
+        for (const auto &line: reader.lines())
+            CHECK(line.box.left() >= -1 && line.box.right() <= given.size().width() + 1 &&
+                  line.box.top() >= -1 && line.box.bottom() <= given.size().height() + 1);
     }
 
     SECTION("Detects regions and recognises extracted text");
     {
-        const sc::image input{"resource/test/ID-10.jpg"};
+        // sc::ocr reads the card upright (it is photographed sideways), so the reference does too.
+        const sc::image given{"resource/test/ID-10.jpg"};
+        sc::image input{given};
+        const int rotation = sc::ocr::upright_rotation(given);
+        CHECK(rotation == 90 || rotation == 270);
+        if (rotation) input.rotate(rotation);
         sc::ocr_detector detector;
         const auto regions = detector.detect(input);
         CHECK(!regions.empty());
