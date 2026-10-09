@@ -179,6 +179,13 @@ for (const auto &found: detections) {
 ```
 <!-- /sc-example -->
 
+More demos, installed alongside it:
+
+| Demo | Shows |
+|---|---|
+| `sc-ai-ocr [image]` | reading text with `sc::ocr`: each line with its confidence and position; without an image it renders a few lines of text to read |
+| `sc-ai-identity [photo]` | checking South African identity numbers (`valid_id_number`, `id_date_of_birth`, `id_sex`), and reading a photographed ID card, ID book or passport when given one |
+
 ## Requirements
 
 - CMake 3.22 or newer

@@ -13,7 +13,8 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 # Dependencies #
 ################
 
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.11)
+# The demos use sc::console subheadings and SC_SHOW with commas (1.5.15).
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.5.15)
 find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
@@ -78,6 +79,8 @@ endif ()
 # Examples #
 ############
 add_sc_example(sc-ai-demo)
+add_sc_example(sc-ai-ocr)
+add_sc_example(sc-ai-identity)
 
 ############
 # Binaries #
