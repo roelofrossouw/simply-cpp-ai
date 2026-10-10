@@ -20,38 +20,9 @@ curl -fsSL https://apt.roelof.co.za/setup.sh | bash # registers the apt repo - s
 sudo apt -y install simply-cpp-dev simply-cpp-image-dev simply-cpp-ai-dev
 ```
 
-### CMake FetchContent
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(
-        sc-ai
-        GIT_REPOSITORY https://github.com/roelofrossouw/simply-cpp-ai.git
-        GIT_TAG main # or a specific tag, e.g. v1.0.2, to stay stable
-        GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(sc-ai)
-
-add_executable(myapp main.cpp)
-target_link_libraries(myapp PRIVATE sc::sc-ai)
-```
-
-sc-core and sc-image are fetched automatically as part of this if they aren't already available - no separate step needed.
-
-### Git submodule
-
-```bash
-git submodule add https://github.com/roelofrossouw/simply-cpp-ai.git third_party/sc-ai
-```
-
-```cmake
-add_subdirectory(third_party/sc-ai)
-target_link_libraries(myapp PRIVATE sc::sc-ai)
-```
-
 ## Dependencies
 
-- **simply-cpp (sc-core) and simply-cpp-image (sc-image)** - real dependencies of sc-ai's CMake package. Neither the Homebrew formula nor the apt package currently pulls them in automatically, so install all three explicitly (see above). FetchContent and the git submodule route fetch/build them automatically instead.
+- **simply-cpp (sc-core) and simply-cpp-image (sc-image)** - real dependencies of sc-ai's CMake package. Neither the Homebrew formula nor the apt package currently pulls them in automatically, so install all three explicitly (see above).
 - **nlohmann_json** - `nlohmann-json3-dev` on apt, `nlohmann-json` on brew; installed automatically if missing when building from source.
 - **ONNX Runtime** - `simply-cpp-onnxruntime` on apt (a repackaged build of ONNX Runtime's own GPU/CUDA release - a matching NVIDIA/CUDA setup needs to already be present), `onnxruntime` on brew; installed automatically if missing when building from source.
 - **ONNX model files** - a separate `simply-cpp-models` package supplies the actual `.onnx` model weights; installed automatically if missing when building from source.
@@ -69,8 +40,6 @@ find_package(sc-ai CONFIG REQUIRED)
 add_executable(myapp main.cpp)
 target_link_libraries(myapp PRIVATE sc::sc-ai)
 ```
-
-(FetchContent and the git submodule route above don't need this - they resolve it automatically.)
 
 ```cpp
 #include <yolo.h>
@@ -212,3 +181,9 @@ The identity and OCR tests read specimen documents with made-up data (`tests/res
 Real identity documents are never committed: put them in `tests/resource/private/documents`
 (git-ignored), where face detection and a few extra checks look for them; without them those are
 skipped.
+
+## Other ways to use it
+
+The packages above are the simplest route. sc-ai can also be built from source, with
+CMake's `FetchContent` or as a git submodule (`add_subdirectory`), from
+https://github.com/roelofrossouw/simply-cpp-ai. It builds sc-core and sc-image too when they aren't installed.
