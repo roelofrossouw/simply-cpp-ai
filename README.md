@@ -2,6 +2,8 @@
 
 Wrappers for common AI tooling: ONNX, YOLO, and more.
 
+**Documentation:** the [simply-cpp wiki](https://github.com/roelofrossouw/simply-cpp/wiki) has an [AI guide](https://github.com/roelofrossouw/simply-cpp/wiki/AI) and the [sc-ai reference](https://github.com/roelofrossouw/simply-cpp/wiki/Reference-sc-ai), plus [getting started](https://github.com/roelofrossouw/simply-cpp/wiki/Getting-Started) for the whole suite.
+
 The public API uses the `sc` namespace and builds on `simply-cpp` (sc-core) and `simply-cpp-image` (sc-image).
 
 ## Install
