@@ -16,7 +16,6 @@ namespace sc {
 
         ~facedetector();
 
-        friend std::ostream &operator<<(std::ostream &lhs, const facedetector &rhs);
 
         void set_threshold(double threshold);
 

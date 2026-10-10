@@ -31,7 +31,7 @@ namespace sc {
 
         bool display(int timeout = 0) const;
 
-        nlohmann::ordered_json to_json();
+        nlohmann::ordered_json to_json() const;
 
         // The COCO name of a detection's type (the last value of each detection in to_json():
         // [centre x %, centre y %, width %, height %, confidence %, type]), or "unknown".
