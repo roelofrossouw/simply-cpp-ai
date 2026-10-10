@@ -22,9 +22,11 @@ namespace sc {
             return result;
         }
 
+        // The number of values in the output: the product of its dimensions (0 for no shape).
         [[nodiscard]] int data_size() const {
-            int64_t size(0);
-            for (const auto &s: shape) size += s;
+            if (shape.empty()) return 0;
+            int64_t size = 1;
+            for (const auto &s: shape) size *= s;
             return static_cast<int>(size);
         }
 
@@ -62,6 +64,8 @@ namespace sc {
 
         [[nodiscard]] int yolo26_size() const;
 
+        // The input image size, width by height, for a model taking one RGB image ([1, 3, height,
+        // width]); a dynamic dimension is not positive. Empty for any other kind of input.
         [[nodiscard]] size_i image_size() const;
 
         void show_shapes() const;

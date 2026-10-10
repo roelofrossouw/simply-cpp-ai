@@ -200,11 +200,12 @@ namespace sc {
                 if (inputs.size() != 1) return {};
                 auto input_shape = inputs[0].second;
                 if (input_shape.size() != 4) return {};
-                // Only handle batches of 1 for now...
-                if (input_shape[0] != 1) return {};
+                // Only handle batches of 1 for now; a dynamic batch (-1) takes 1 too.
+                if (input_shape[0] != 1 && input_shape[0] != -1) return {};
                 // Only handling RGB
                 if (input_shape[1] != 3) return {};
-                return {input_shape[2], input_shape[3]};
+                // NCHW: the shape is [batch, channels, height, width], and a size is width first.
+                return {static_cast<int>(input_shape[3]), static_cast<int>(input_shape[2])};
             }
 
         private:

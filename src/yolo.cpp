@@ -71,7 +71,7 @@ namespace sc {
             }
 
             [[nodiscard]] nlohmann::ordered_json json() const {
-                nlohmann::ordered_json result;
+                auto result = nlohmann::ordered_json::array(); // [] rather than null when nothing passes
                 for (const auto &detection: detections)
                     if (detection.confidence >= threshold_) result.push_back(detection.json());
                 return result;
@@ -140,7 +140,7 @@ namespace sc {
         return (type < 0 || type >= static_cast<int>(impl::kCocoNames.size())) ? "unknown" : impl::kCocoNames[type];
     }
 
-    nlohmann::ordered_json yolo::to_json() {
+    nlohmann::ordered_json yolo::to_json() const {
         return impl->json();
     }
 } // namespace sc
