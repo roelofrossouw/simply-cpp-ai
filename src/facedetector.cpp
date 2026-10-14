@@ -105,11 +105,11 @@ namespace sc {
             }
 
             static void annotate_face(const detection &detection, image &img) {
-                img.rect(detection.box);
-                const point_i label_position{detection.box.left(), std::max(20, (int) detection.box.top() - 5)};
-                const std::string label = detection.score;
-                img.text(label, label_position);
-                for (const auto &landmark: detection.landmarks) img.circle({landmark.x(), landmark.y()}, 1);
+                img.draw(detection.box, color::Blue, color::Transparent, 2);
+                const point label_position{static_cast<double>(detection.box.left()),
+                                           std::max(20.0, static_cast<double>(detection.box.top()) - 5)};
+                img.draw(text{detection.score, label_position, {"sans-serif", 16}}, color::Blue);
+                for (const auto &landmark: detection.landmarks) img.draw(circle{landmark, 1}, color::Green, color::Transparent, 2);
             }
 
             vector<face> process_detections(const vector<const float *> &outputs, const image &img,

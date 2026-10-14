@@ -720,11 +720,9 @@ namespace sc {
                 if (!original) throw std::runtime_error{"No image has been detected"};
                 image result{*original};
                 for (const auto &line: lines_) {
-                    result.rect(line.box);
-                    result.text(line.text, {
-                                    static_cast<int>(line.box.left()),
-                                    std::max(20, static_cast<int>(line.box.top()) - 5)
-                                });
+                    result.draw(line.box, color::Blue, color::Transparent, 2);
+                    result.draw(sc::text{line.text, {line.box.left(), std::max(20.0, line.box.top() - 5)}, {"sans-serif", 16}},
+                                color::Blue);
                 }
                 return result;
             }

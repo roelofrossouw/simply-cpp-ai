@@ -83,11 +83,11 @@ namespace sc {
                 for (const auto &detection: detections) {
                     if (detection.confidence < threshold_) continue;
                     const auto box = detection.box * result.size();
-                    result.rect(box);
+                    result.draw(box, color::Blue, color::Transparent, 2);
 
                     const auto label = detection.object_name() + " (" + detection.confidence + ")";
                     const auto top = box.top() < 25 ? box.top() + 25 : box.top() - 5;
-                    result.text(label, {static_cast<int>(box.left()), static_cast<int>(top)});
+                    result.draw(text{label, {box.left(), top}, {"sans-serif", 16}}, color::Blue);
                 }
                 return result;
             }
