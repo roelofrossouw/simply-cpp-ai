@@ -22,6 +22,18 @@ curl -fsSL https://apt.roelof.co.za/setup.sh | bash # registers the apt repo - s
 sudo apt -y install simply-cpp-dev simply-cpp-image-dev simply-cpp-ai-dev
 ```
 
+
+## Model licences
+
+The models in `simply-cpp-models` keep their upstream licences, not this
+module's Apache-2.0; `/opt/simply-cpp/models/NOTICE.md` (apt) or the formula's
+`share/simply-cpp-models/NOTICE.md` (Homebrew) lists them. In short: the
+InsightFace face models (`det_10g`, `w600k_r50`) are for **non-commercial
+research only**; the Ultralytics YOLO models (`yolo26n`, and `numberplate`,
+trained on it) are **AGPL-3.0** unless you have an Ultralytics Enterprise
+Licence; the PaddleOCR models are Apache-2.0. Check these before using sc-ai's
+face or object detection in a product.
+
 ## Dependencies
 
 - **simply-cpp (sc-core) and simply-cpp-image (sc-image)** - real dependencies of sc-ai's CMake package. Neither the Homebrew formula nor the apt package currently pulls them in automatically, so install all three explicitly (see above).
