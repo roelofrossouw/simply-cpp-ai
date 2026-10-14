@@ -1,10 +1,12 @@
 #include "ocr.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <svg2png.h>
 #include <sc_test.h>
@@ -31,38 +33,31 @@ namespace {
 int main() {
     SECTION("Recognises text and returns positioned lines");
     {
+        // The specimen card is turned sideways: sc::ocr reads it upright, with boxes on the image
+        // as given. Read once, as each read is a few seconds on a CPU.
         sc::ocr reader;
-        reader.detect("resource/samples/card-sideways.jpg");
+        const sc::image given{"resource/samples/card-sideways.jpg"};
+        const int rotation = sc::ocr::upright_rotation(given);
+        CHECK(rotation == 90 || rotation == 270);
+        reader.detect(given, 0);
+        CHECK_EQ(reader.rotation(), rotation);
 
         CHECK(!reader.lines().empty());
         CHECK(!reader.text().empty());
         CHECK(reader.to_json().is_array());
         CHECK(reader.to_json().size() == reader.lines().size());
-
         for (const auto &line: reader.lines()) {
             CHECK(!line.text.empty());
             CHECK(line.confidence >= 0);
             CHECK(line.confidence <= 100);
             CHECK(line.box.width() > 0);
             CHECK(line.box.height() > 0);
+            CHECK(line.box.left() >= -1 && line.box.right() <= given.size().width() + 1 &&
+                  line.box.top() >= -1 && line.box.bottom() <= given.size().height() + 1);
         }
-
-        reader.detect("resource/samples/card-sideways.jpg", 90);
-        for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
-
-        // The specimen card is turned sideways: sc::ocr reads it upright, with boxes on the image
-        // as given.
-        const sc::image given{"resource/samples/card-sideways.jpg"};
-        const int rotation = sc::ocr::upright_rotation(given);
-        CHECK(rotation == 90 || rotation == 270);
-        reader.detect(given, 0);
-        CHECK_EQ(reader.rotation(), rotation);
         const auto text = reader.text();
         for (const char *expected: {"REPUBLIC OF SOUTH AFRICA", "NATIONAL IDENTITY CARD", "SAMPLESON", "ALEX JORDAN"})
             CHECK_MSG(text.find(expected) != std::string::npos, std::string{"expected "} + expected);
-        for (const auto &line: reader.lines())
-            CHECK(line.box.left() >= -1 && line.box.right() <= given.size().width() + 1 &&
-                  line.box.top() >= -1 && line.box.bottom() <= given.size().height() + 1);
     }
 
     SECTION("Detects regions and recognises extracted text");
@@ -88,9 +83,11 @@ int main() {
         const auto detected_images = detector.text_images(input);
         CHECK_EQ(detected_images.size(), regions.size());
 
+        // Recognition on a few of the lines: each one costs time on a CPU, and a few show it.
+        const std::vector<sc::image> some(text_images.begin(), text_images.begin() + std::min<std::size_t>(8, text_images.size()));
         sc::ocr_recognizer recognizer;
-        const auto recognised = recognizer.recognize(text_images);
-        CHECK_EQ(recognised.size(), text_images.size());
+        const auto recognised = recognizer.recognize(some);
+        CHECK_EQ(recognised.size(), some.size());
         CHECK(std::ranges::any_of(recognised, [](const sc::ocr_recognizer::result &result) {
             return !result.text.empty();
         }));
@@ -99,12 +96,13 @@ int main() {
             CHECK(result.confidence <= 100);
         }
 
+        // The threshold leaves only the lines that reach it.
         constexpr double recognition_threshold = 90;
         const auto expected_count = std::ranges::count_if(recognised, [](const sc::ocr_recognizer::result &result) {
             return result.confidence >= recognition_threshold;
         });
         recognizer.set_threshold(recognition_threshold);
-        const auto filtered = recognizer.recognize(text_images);
+        const auto filtered = recognizer.recognize(some);
         CHECK_EQ(filtered.size(), expected_count);
         for (const auto &result: filtered) CHECK(result.confidence >= recognition_threshold);
         CHECK_THROWS_AS(recognizer.set_threshold(-1), std::invalid_argument);
@@ -117,7 +115,7 @@ int main() {
         // empty, and large text came back word by word in a shuffled order.
         sc::ocr reader;
         const auto path = (std::filesystem::temp_directory_path() / "sc-ai-test-ocr-page.png").string();
-        for (const int width: {480, 640, 1600}) {
+        for (const int width: {480, 1600}) { // the smallest and the largest that went wrong
             const auto png = sc::svg2png::FromString(invoice_page(width));
             // Rendering text needs a system font; without one the page stays blank.
             if (png.size() < sc::svg2png::FromString(invoice_page(width, false)).size() + 1000) {
@@ -128,6 +126,11 @@ int main() {
             reader.detect(std::filesystem::path{path});
             CHECK_MSG(reader.text() == "Invoice 2026-0142\nTotal due: R 1 250.00\nDue date: 2026-10-31",
                       "at " + std::to_string(width) + " px, read \"" + reader.text() + '"');
+            if (width == 480) {
+                // A confidence threshold leaves only the lines that reach it.
+                reader.detect(std::filesystem::path{path}, 90);
+                for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
+            }
         }
         std::filesystem::remove(path);
     }

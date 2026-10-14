@@ -72,6 +72,10 @@ namespace sc {
 
         static void show_providers();
 
+        // Whether models run accelerated: CoreML on Apple platforms, or CUDA where its provider
+        // and runtime are available. Without, they run on the CPU (several times slower).
+        [[nodiscard]] static bool accelerated();
+
     private:
         impl::onnx_impl *impl;
     };
