@@ -1,0 +1,17 @@
+simply-cpp-models: pretrained ONNX models used with simply-cpp-ai
+
+These models are not simply-cpp's own work and are not under its Apache-2.0
+licence. Each keeps its upstream licence; see /opt/simply-cpp/models/NOTICE.md
+for which model is under which, with the licence texts in
+/opt/simply-cpp/models/licenses/. In short:
+
+  det_10g.onnx, w600k_r50.onnx (InsightFace)
+    Non-commercial research use only.
+
+  yolo26n.onnx (Ultralytics YOLO26), numberplate.onnx (trained on yolo26n)
+    GNU Affero General Public License v3.0, or an Ultralytics Enterprise
+    Licence. /opt/simply-cpp/models/licenses/AGPL-3.0.txt
+
+  paddle_*.onnx (PaddleOCR, PaddleX)
+    Apache License 2.0, Copyright PaddlePaddle Authors.
+    /opt/simply-cpp/models/licenses/Apache-2.0.txt
