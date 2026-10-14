@@ -265,6 +265,16 @@ namespace sc {
         impl->show_shapes();
     }
 
+    bool onnx::accelerated() {
+#ifdef __APPLE__
+        return true;
+#else
+        const auto providers = Ort::GetAvailableProviders();
+        return std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end() &&
+               impl::cuda_runtime_available();
+#endif
+    }
+
     void onnx::show_providers() {
         for (const auto &provider: Ort::GetAvailableProviders()) std::cout << provider << '\n';
     }

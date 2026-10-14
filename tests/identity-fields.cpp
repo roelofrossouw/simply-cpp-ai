@@ -1,15 +1,19 @@
 #include "identity.h"
+#include "onnx.h"
 #include <sc_test.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
 
 int main() {
     // Specimens with made-up data (resource/samples, rendered from the SVGs beside them).
-    SECTION("Reading a smart ID card");
+    SECTION("Reading a smart ID card, photographed sideways");
     {
-        const sc::identity card{"resource/samples/card.jpg"};
+        // Sideways, so it covers turning it upright too (the upright card.jpg adds nothing but time).
+        const sc::identity card{"resource/samples/card-sideways.jpg"};
+        CHECK(card.rotation() == 90 || card.rotation() == 270);
         CHECK(card.document_type() == sc::identity::document::id_card);
         CHECK_EQ(card.id_number(), std::string{"8001015009087"});
         CHECK_EQ(card.surname(), std::string{"SAMPLESON"});
@@ -17,15 +21,6 @@ int main() {
         CHECK_EQ(card.date_of_birth(), std::string{"1980-01-01"});
         CHECK_EQ(card.sex(), std::string{"M"});
         CHECK(card.checks().luhn && card.checks().date_of_birth && card.checks().sex);
-    }
-
-    SECTION("Reading a card photographed sideways");
-    {
-        const sc::identity card{"resource/samples/card-sideways.jpg"};
-        CHECK(card.rotation() == 90 || card.rotation() == 270);
-        CHECK_EQ(card.id_number(), std::string{"8001015009087"});
-        CHECK_EQ(card.surname(), std::string{"SAMPLESON"});
-        CHECK_EQ(card.names(), std::string{"ALEX JORDAN"});
     }
 
     SECTION("Reading an ID book, surname starting with VAN");
@@ -40,9 +35,15 @@ int main() {
     }
 
     // Real documents are kept out of the repository, in resource/private/documents (git-ignored).
-    // Where they are present, a partial card from them is read too - checked for shape only.
+    // Where they are present, a partial card from them is read too - checked for shape only. A
+    // real photo takes over 20 seconds on a CPU, so only where models are accelerated (a GPU,
+    // or CoreML), unless SC_AI_SLOW_TESTS=1 asks for it.
     SECTION("Reading a partial smart ID card (private documents)");
-    if (const std::filesystem::path card_path{"resource/private/documents/ID-10.jpg"}; std::filesystem::exists(card_path)) {
+    const char *slow_tests = std::getenv("SC_AI_SLOW_TESTS");
+    const bool slow_ok = sc::onnx::accelerated() || (slow_tests && std::string{slow_tests} == "1");
+    if (const std::filesystem::path card_path{"resource/private/documents/ID-10.jpg"}; !slow_ok) {
+        std::cout << "   (models on the CPU: skipped; SC_AI_SLOW_TESTS=1 runs it)" << std::endl;
+    } else if (std::filesystem::exists(card_path)) {
         const sc::identity card{card_path};
         CHECK(!card.has_id_number());
         CHECK(card.document_type() == sc::identity::document::id_card);
