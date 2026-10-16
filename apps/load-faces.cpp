@@ -1,4 +1,5 @@
 #include <facedetector.h>
+#include <params.h>
 #include <pgsql.h>
 #include <iostream>
 
@@ -15,11 +16,16 @@ select * from truckassist.detection limit 10;
 */
 
 int main(int argc, char **argv) {
+    const sc::params args{argc, argv, {
+        {"name", "load-faces"},
+        {"description", "Detects the faces in every image in FOLDER and stores their embeddings in truckassist.detection."},
+        {"positional", {
+            {"folder", {{"default", image_path.string()}, {"help", "the images to read"}}}}}}};
     string query{"insert into truckassist.detection(file, number, embedding) values ($1, $2, $3)"};
     // const filesystem::path file{image_path / "d1333 id.jpg"};
     const sc::facedetector fd;
     const sc::postgres dev("devdb", "1web", "www");
-    for (const auto &file: filesystem::directory_iterator(image_path)) {
+    for (const auto &file: filesystem::directory_iterator(args.as<string>("folder"))) {
         if (!file.is_regular_file()) continue;
         auto faces = fd.detect(file);
         cout << "Running file " << file.path().filename() << " (" << faces.size() << " faces)\n";

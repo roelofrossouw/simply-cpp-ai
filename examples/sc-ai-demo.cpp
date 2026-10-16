@@ -1,6 +1,6 @@
 // Runs YOLO object detection (yolo26n.onnx from simply-cpp-models) on an image and lists what it
-// found. Pass a photo to detect objects in it; without one it uses a small rendered image, which
-// has no objects, but still shows the model, ONNX Runtime and sc-image loading and running.
+// found. --help lists the options: a photo to detect objects in; without one it uses a small
+// rendered image, which has no objects, but still shows the model, ONNX Runtime and sc-image loading and running.
 
 #include <iostream>
 #include <string>
@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <iomanip>
 
+#include <params.h>
 #include <sc.h>
 
 #include <image.h>
@@ -16,8 +17,15 @@
 #include <yolo.h>
 
 int main(int argc, char **argv) {
+    // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
+    const sc::params args{argc, argv, {
+        {"name", "sc-ai-demo"},
+        {"description", "Detects objects in a photo with YOLO. Without PHOTO it runs on a rendered landscape with no objects in it."},
+        {"positional", {
+            {"photo", {{"required", false}, {"help", "the photo to detect objects in"}}}}}}};
+
     try {
-        std::string source = argc > 1 ? argv[1] : "";
+        std::string source = args.as<std::string>("photo", "");
         sc::console::title("simply-cpp ai: object detection with YOLO");
         if (source.empty()) {
             sc::console::output() << "No photo given (sc-ai-demo <photo>), so using a rendered landscape with no objects in it\n";
