@@ -83,7 +83,7 @@ namespace sc {
                 for (const auto &detection: detections) {
                     if (detection.confidence < threshold_) continue;
                     const auto box = detection.box * result.size();
-                    result.draw(box, color::Blue, color::Transparent, 2);
+                    result.draw(box, stroke{color::Blue, 2});
 
                     const auto label = detection.object_name() + " (" + detection.confidence + ")";
                     const auto top = box.top() < 25 ? box.top() + 25 : box.top() - 5;
