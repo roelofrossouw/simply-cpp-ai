@@ -4,14 +4,12 @@ Made-up identity documents for the tests and demos: a smart ID card (also turned
 passport data page with a machine readable zone whose check digits agree, and a green ID book page.
 The people, numbers and dates are invented, and each is marked "SPECIMEN - NOT A VALID DOCUMENT".
 
-The JPEGs are rendered from the SVGs beside them with `sc::svg2png` and `sc::image` (Arial or
-Helvetica), so the tests read the same pixels on every machine. To change one, edit its SVG and
-render it again:
+The JPEGs were rendered from the SVGs beside them (in Arial or Helvetica) with the lunasvg-based
+`sc::svg2png` of sc-image 3.1 and earlier, and are kept as they are, so the tests read the same
+pixels on every machine. sc-image 4 renders SVG without real fonts, so it can't render them again
+like for like.
 
-```cpp
-std::ofstream{"card.png", std::ios::binary} << sc::svg2png::FromFile("card.svg");
-sc::image{"card.png"}.save("card.jpg");
-```
+TODO: re-render them once sc-image draws text in real fonts.
 
 Real documents never go in the repository: put them in `tests/resource/private/` (git-ignored),
 where the tests that need them - real faces, real photographs - look for them, and skip without.
