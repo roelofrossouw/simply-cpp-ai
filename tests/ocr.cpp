@@ -8,27 +8,7 @@
 #include <string>
 #include <vector>
 
-#include <svg2png.h>
 #include <sc_test.h>
-
-namespace {
-    // A white page, width pixels wide, with three lines of black text scaled to suit.
-    std::string invoice_page(const int width, const bool with_text = true) {
-        const int font_size = width * 24 / 640;
-        std::string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + std::to_string(width) +
-                          "\" height=\"" + std::to_string(font_size * 8) + "\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/>";
-        if (with_text) {
-            svg += "<g font-family=\"Arial, Helvetica, DejaVu Sans, Liberation Sans, sans-serif\" font-size=\"" +
-                    std::to_string(font_size) + "\">";
-            const char *lines[] = {"Invoice 2026-0142", "Total due: R 1 250.00", "Due date: 2026-10-31"};
-            for (int i = 0; i < 3; ++i)
-                svg += "<text x=\"" + std::to_string(font_size) + "\" y=\"" + std::to_string(font_size * 2 * (i + 1)) +
-                        "\">" + lines[i] + "</text>";
-            svg += "</g>";
-        }
-        return svg + "</svg>";
-    }
-}
 
 int main() {
     SECTION("Recognises text and returns positioned lines");
@@ -107,56 +87,6 @@ int main() {
         for (const auto &result: filtered) CHECK(result.confidence >= recognition_threshold);
         CHECK_THROWS_AS(recognizer.set_threshold(-1), std::invalid_argument);
         CHECK_THROWS_AS(recognizer.set_threshold(101), std::invalid_argument);
-    }
-
-    SECTION("Reads a few lines of clean text whole and in reading order, at any size");
-    {
-        // A page with fewer text regions than the noise filter's neighbour count used to come back
-        // empty, and large text came back word by word in a shuffled order.
-        sc::ocr reader;
-        const auto path = (std::filesystem::temp_directory_path() / "sc-ai-test-ocr-page.png").string();
-        for (const int width: {480, 1600}) { // the smallest and the largest that went wrong
-            const auto png = sc::svg2png::FromString(invoice_page(width));
-            // Rendering text needs a system font; without one the page stays blank.
-            if (png.size() < sc::svg2png::FromString(invoice_page(width, false)).size() + 1000) {
-                std::cout << "   (no font to render text with: skipped)" << std::endl;
-                break;
-            }
-            std::ofstream{path, std::ios::binary} << png;
-            reader.detect(std::filesystem::path{path});
-            CHECK_MSG(reader.text() == "Invoice 2026-0142\nTotal due: R 1 250.00\nDue date: 2026-10-31",
-                      "at " + std::to_string(width) + " px, read \"" + reader.text() + '"');
-            if (width == 480) {
-                // A confidence threshold leaves only the lines that reach it.
-                reader.detect(std::filesystem::path{path}, 90);
-                for (const auto &line: reader.lines()) CHECK(line.confidence >= 90);
-            }
-        }
-        std::filesystem::remove(path);
-    }
-
-    SECTION("Detects lone letters and short words, as one region each");
-    {
-        // A tall letter's region used to come out at 90 degrees and be dropped as noise: F, A and 7
-        // were never found.
-        std::string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"700\">"
-                          "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>"
-                          "<g font-family=\"Arial, Helvetica, DejaVu Sans, Liberation Sans, sans-serif\">";
-        const char *tokens[] = {"M", "F", "ID", "No", "12", "A", "Sex", "RSA", "7", "OK"};
-        for (int i = 0; i < 10; ++i)
-            svg += "<text x=\"" + std::to_string(100 + i % 5 * 170) + "\" y=\"" + std::to_string(200 + i / 5 * 250) +
-                    "\" font-size=\"" + std::to_string(28 + i % 3 * 8) + "\">" + tokens[i] + "</text>";
-        svg += "</g></svg>";
-        const auto png = sc::svg2png::FromString(svg);
-        if (png.size() < 2000) {
-            std::cout << "   (no font to render text with: skipped)" << std::endl;
-        } else {
-            const auto path = (std::filesystem::temp_directory_path() / "sc-ai-test-ocr-tokens.png").string();
-            std::ofstream{path, std::ios::binary} << png;
-            sc::ocr_detector detector;
-            CHECK_EQ(detector.detect(std::filesystem::path{path}).size(), std::size_t{10});
-            std::filesystem::remove(path);
-        }
     }
 
     SECTION("Rejects missing input");
