@@ -1,12 +1,13 @@
 // Reads text from an image with PaddleOCR models (from simply-cpp-models): finds each line, reads
-// it, and gives how sure it is and where it is. Pass an image to read that; without one it renders
-// a few lines of text from SVG and reads those. Writes only to the temporary directory.
+// it, and gives how sure it is and where it is. --help lists the options: an image to read; without
+// one it renders a few lines of text from SVG and reads those. Writes only to the temporary directory.
 
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <filesystem>
 
+#include <params.h>
 #include <sc.h>
 
 #include <image.h>
@@ -14,8 +15,15 @@
 #include <svg2png.h>
 
 int main(int argc, char **argv) {
+    // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
+    const sc::params args{argc, argv, {
+        {"name", "sc-ai-ocr"},
+        {"description", "Reads the lines of text in an image with PaddleOCR. Without IMAGE it renders a few lines and reads those."},
+        {"positional", {
+            {"image", {{"required", false}, {"help", "the image to read"}}}}}}};
+
     try {
-        std::string source = argc > 1 ? argv[1] : "";
+        std::string source = args.as<std::string>("image", "");
         sc::console::title("simply-cpp ai: reading text with OCR");
         if (source.empty()) {
             sc::console::output() << "No image given (sc-ai-ocr <image>), so rendering a few lines of text\n";

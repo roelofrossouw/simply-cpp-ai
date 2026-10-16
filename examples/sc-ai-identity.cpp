@@ -1,16 +1,25 @@
 // South African identity documents with sc::identity: checking an identity number and what it
 // encodes, and - given a photo of an ID card, ID book or passport - reading one with OCR. Each line
-// shows a call, as written, and what it returned. The numbers below are made up.
+// shows a call, as written, and what it returned. The numbers below are made up. --help lists the
+// options.
 
 #include <iostream>
 #include <string>
 #include <filesystem>
 
+#include <params.h>
 #include <sc.h>
 
 #include <identity.h>
 
 int main(int argc, char **argv) {
+    // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
+    const sc::params args{argc, argv, {
+        {"name", "sc-ai-identity"},
+        {"description", "Checks South African identity numbers and, given PHOTO (an ID card, ID book or passport), reads the document with OCR."},
+        {"positional", {
+            {"photo", {{"required", false}, {"help", "a photo of an ID card, ID book or passport to read"}}}}}}};
+
     try {
         sc::console::title("simply-cpp ai: South African identity documents");
 
@@ -27,12 +36,13 @@ int main(int argc, char **argv) {
         SC_SHOW(sc::identity::id_date_of_birth("12345"));        // empty when the number isn't valid
 
         sc::console::heading("Reading a document");
-        if (argc < 2) {
+        const auto *photo = args.lookup("photo");
+        if (!photo) {
             sc::console::note("Pass a photo of an ID card, ID book or passport to read one: sc-ai-identity <photo>");
             return 0;
         }
         sc::timer sw;
-        const sc::identity document{std::filesystem::path{argv[1]}};
+        const sc::identity document{std::filesystem::path{photo->get<std::string>()}};
         sc::console::show_text("const sc::identity document{photo};", "read in " + std::string(sw));
         SC_SHOW(document.document_type_name());
         SC_SHOW(document.has_id_number());
