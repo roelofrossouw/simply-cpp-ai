@@ -18,7 +18,9 @@ int main(int argc, char **argv) {
     // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
     const sc::params args{argc, argv, {
         {"name", "sc-ai-ocr"},
-        {"description", "Reads the lines of text in an image with PaddleOCR. Without IMAGE it renders a few lines and reads those."},
+        {"description", "Reads the lines of text in an image with PaddleOCR and prints what it finds. Without IMAGE it draws "
+                        "a few lines of its own first and reads those back, so you can try it straight away."
+                        "\nMore on the wiki: https://github.com/roelofrossouw/simply-cpp/wiki/AI"},
         {"positional", {
             {"image", {{"required", false}, {"help", "the image to read"}}}}}}};
 

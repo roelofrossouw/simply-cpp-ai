@@ -20,7 +20,9 @@ int main(int argc, char **argv) {
     // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
     const sc::params args{argc, argv, {
         {"name", "sc-ai-demo"},
-        {"description", "Detects objects in a photo with YOLO. Without PHOTO it runs on a rendered landscape with no objects in it."},
+        {"description", "Finds objects in a photo with YOLO and lists what it sees. Without PHOTO it runs on a rendered "
+                        "landscape with no objects in it, so you can watch it work without a picture of your own."
+                        "\nMore on the wiki: https://github.com/roelofrossouw/simply-cpp/wiki/AI"},
         {"positional", {
             {"photo", {{"required", false}, {"help", "the photo to detect objects in"}}}}}}};
 
