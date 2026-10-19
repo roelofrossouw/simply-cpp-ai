@@ -16,7 +16,9 @@ int main(int argc, char **argv) {
     // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
     const sc::params args{argc, argv, {
         {"name", "sc-ai-identity"},
-        {"description", "Checks South African identity numbers and, given PHOTO (an ID card, ID book or passport), reads the document with OCR."},
+        {"description", "Checks South African identity numbers, and given a PHOTO of an ID card, ID book or passport, it "
+                        "reads the document with OCR and shows what it found.\nMore on the wiki: "
+                        "https://github.com/roelofrossouw/simply-cpp/wiki/AI"},
         {"positional", {
             {"photo", {{"required", false}, {"help", "a photo of an ID card, ID book or passport to read"}}}}}}};
 
