@@ -932,8 +932,8 @@ namespace sc {
         return impl->text();
     }
 
-    bool ocr::display(const int timeout) const {
-        return impl->annotated().show(timeout);
+    image ocr::annotated() const {
+        return impl->annotated();
     }
 
     nlohmann::ordered_json ocr::to_json() const {

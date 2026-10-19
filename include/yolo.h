@@ -29,7 +29,9 @@ namespace sc {
         void detect(const std::filesystem::path &image_path) const;
         void detect(const image &input) const;
 
-        bool display(int timeout = 0) const;
+        /// The objects found, each boxed and labelled, on a copy of the image read last: to save or draw on.
+
+        [[nodiscard]] image annotated() const;
 
         nlohmann::ordered_json to_json() const;
 

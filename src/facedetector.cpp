@@ -212,7 +212,7 @@ namespace sc {
         return impl->run(input, include_face_images);
     }
 
-    bool facedetector::display(const int timeout) const {
-        return impl->annotated().show(timeout);
+    image facedetector::annotated() const {
+        return impl->annotated();
     }
 } // namespace sc
