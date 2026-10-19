@@ -31,7 +31,7 @@ int main() {
         sw.reset();
         cout << ocr.to_json().dump(4) << endl;
         cout << sw << " Done " << endl;
-        if (!img.show()) break;
+        ocr.annotated().save((std::filesystem::temp_directory_path() / ("run-ocr-" + file.path().filename().string() + ".png")).string());
     }
 
     return 0;

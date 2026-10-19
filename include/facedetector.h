@@ -26,7 +26,9 @@ namespace sc {
 
         [[nodiscard]] std::vector<face> detect(const image &input, bool include_face_images = true) const;
 
-        [[nodiscard]] bool display(int timeout = 0) const;
+        /// The faces found, boxed with their landmarks, on a copy of the image read last: to save or draw on.
+
+        [[nodiscard]] image annotated() const;
 
     private:
         impl::face_impl *impl;

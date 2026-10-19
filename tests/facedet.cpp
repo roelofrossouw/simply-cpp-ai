@@ -38,7 +38,6 @@ int main() {
         }
         auto detected_faces = fd.detect(img_file.path());
         if (!detected_faces.empty()) feats.emplace_back(img_file.path().filename(), detected_faces.front());
-        // if (!fd.display()) break; // Show annotated face.
     }
     cout << "\n\nDetection run: " << sw << endl;
     sw.reset();
@@ -52,7 +51,6 @@ int main() {
                 if (sim < 60) cout << "????";
                 cout << endl;
                 // const auto matched_faces = sc::image::side_by_side(*f1.face_image(), *f2.face_image());
-                // if (!matched_faces.show(0, "Matched faces")) return 0;
             }
         }
     }

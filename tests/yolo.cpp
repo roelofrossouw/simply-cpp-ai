@@ -66,7 +66,6 @@ int main() {
         yolo.detect(img_file.path());
         cout << img_file.path().filename() << ": " << yolo << " (" << image_timer << ")" << endl;
 // #ifdef __APPLE__
-//         if (!yolo.display(0)) break;
 // #endif
     }
 

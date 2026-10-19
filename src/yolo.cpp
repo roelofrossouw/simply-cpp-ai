@@ -132,8 +132,8 @@ namespace sc {
         impl->run(input);
     }
 
-    bool yolo::display(const int timeout) const {
-        return impl->annotated().show(timeout);
+    image yolo::annotated() const {
+        return impl->annotated();
     }
 
     std::string yolo::object_name(const int type) {

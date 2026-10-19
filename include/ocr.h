@@ -132,7 +132,9 @@ namespace sc {
 
         [[nodiscard]] std::string text() const;
 
-        [[nodiscard]] bool display(int timeout = 0) const;
+        /// The lines found, each boxed, on a copy of the image read last: to save or draw on.
+
+        [[nodiscard]] image annotated() const;
 
         [[nodiscard]] nlohmann::ordered_json to_json() const;
 
