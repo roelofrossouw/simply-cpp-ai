@@ -29,6 +29,8 @@ endif ()
 set(SC_TEST_LINK_LIBRARIES sc-ai)
 
 add_sc_test(yolo TIMEOUT 120)
+# The models as the package ships them, for one not yet installed (simply-cpp-models' next release).
+target_compile_definitions(test-yolo PRIVATE SC_AI_PACKAGE_MODELS="${PROJECT_SOURCE_DIR}/pkg/opt/simply-cpp/models")
 add_dependencies(test-yolo copy_sc_ai_resources)
 add_sc_test(ocr TIMEOUT 120)
 add_dependencies(test-ocr copy_sc_ai_resources)

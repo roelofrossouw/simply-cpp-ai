@@ -1,4 +1,4 @@
-// Runs YOLO object detection (yolo26n.onnx from simply-cpp-models) on an image, or on a video a
+// Runs YOLO object detection (yolo26n.onnx from simply-cpp-models, or --model yolo26m) on an image, or on a video a
 // frame at a time, and lists what it found. --help lists the options: a photo to detect objects
 // in, or --video with a frame every so many seconds; without either it uses a small rendered image,
 // which has no objects, but still shows the model, ONNX Runtime and sc-image loading and running.
@@ -52,6 +52,8 @@ int main(int argc, char **argv) {
                         "watch it work without a picture of your own."
                         "\nMore on the wiki: https://github.com/roelofrossouw/simply-cpp/wiki/AI"},
         {"options", {
+            {"model", {{"short", "m"}, {"default", "yolo26n"}, {"value", "MODEL"},
+                       {"help", "yolo26n (quick), yolo26m (slower, finds more and is surer), or an .onnx file"}}},
             {"video", {{"short", "v"}, {"value", "FILE"}, {"help", "a video to detect objects in (MP4, MOV, MKV, AVI, ...), instead of a photo"}}},
             {"every", {{"short", "e"}, {"type", "number"}, {"default", 1}, {"value", "SECONDS"},
                        {"help", "with --video, look at a frame this often (0: every frame)"}}},
@@ -82,8 +84,9 @@ int main(int argc, char **argv) {
 
         // [readme]
         sc::console::heading("Loading the model");
-        sc::yolo yolo{"yolo26n.onnx"};
-        sc::console::show_text("sc::yolo yolo{\"yolo26n.onnx\"};", "loaded in " + std::string(sw));
+        const auto model = args.as<std::string>("model"); // a name in simply-cpp-models, or a file
+        sc::yolo yolo{model};
+        sc::console::show_text("sc::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
         yolo.set_threshold(threshold / 100); // a fraction: 0.3 lists what it's at least 30% sure of
 
         if (video_file.empty()) {

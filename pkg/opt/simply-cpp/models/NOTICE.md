@@ -26,6 +26,7 @@ of their README and https://www.insightface.ai).
 | File | Model |
 |---|---|
 | `yolo26n.onnx` | Ultralytics YOLO26 nano object detector (COCO), exported to ONNX |
+| `yolo26m.onnx` | Ultralytics YOLO26 medium object detector (COCO): slower, more accurate; exported to ONNX as `yolo26n` was (640 px, end-to-end, at most 10 objects: `simplify=True max_det=10`, plus `nms=False` for Ultralytics 8.4.183) from `yolo26m.pt` of release v8.4.0 |
 | `numberplate.onnx` | Number plate detector, trained by Roelof Rossouw on top of `yolo26n` |
 
 Source: https://github.com/ultralytics/ultralytics.

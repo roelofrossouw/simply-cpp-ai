@@ -2,6 +2,7 @@
 #include <onnx.h>
 #include <ocr.h>
 #include <yolo.h>
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <vector>
@@ -50,6 +51,32 @@ int main() {
         CHECK(nothing.to_json().is_array());
         CHECK(nothing.to_json().empty());
         CHECK_EQ(static_cast<std::string>(nothing), std::string{"[]"});
+    }
+
+    SECTION("The medium model: the same output, surer and finding more");
+    {
+        const fs::path medium = fs::path{SC_AI_PACKAGE_MODELS} / "yolo26m.onnx";
+        const sc::onnx detector{medium.string()};
+        CHECK_EQ(detector.image_size().width(), 640);
+        CHECK_EQ(detector.yolo26_size(), 10); // exported with max_det=10, as the nano model was
+        const auto people = [](const sc::yolo &model, double &best) {
+            int count = 0;
+            for (const auto &found: model.to_json())
+                if (sc::yolo::object_name(found[5].get<int>()) == "person") {
+                    ++count;
+                    best = std::max(best, found[4].get<double>());
+                }
+            return count;
+        };
+        const fs::path picture = IMAGES / "000000031296.jpg"; // people at a table
+        sc::yolo nano{MODEL.string()}, more{medium.string()};
+        nano.detect(picture);
+        more.detect(picture);
+        double nano_best = 0, medium_best = 0;
+        const int nano_people = people(nano, nano_best), medium_people = people(more, medium_best);
+        CHECK(medium_people >= nano_people);
+        CHECK(medium_best >= 90);
+        CHECK(nano_people > 0);
     }
 
     sc::timer sw;
