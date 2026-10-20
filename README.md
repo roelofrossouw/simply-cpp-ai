@@ -29,8 +29,8 @@ The models in `simply-cpp-models` keep their upstream licences, not this
 module's Apache-2.0; `/opt/simply-cpp/models/NOTICE.md` (apt) or the formula's
 `share/simply-cpp-models/NOTICE.md` (Homebrew) lists them. In short: the
 InsightFace face models (`det_10g`, `w600k_r50`) are for **non-commercial
-research only**; the Ultralytics YOLO models (`yolo26n`, and `numberplate`,
-trained on it) are **AGPL-3.0** unless you have an Ultralytics Enterprise
+research only**; the Ultralytics YOLO models (`yolo26n`, `yolo26m`, and
+`numberplate`, trained on `yolo26n`) are **AGPL-3.0** unless you have an Ultralytics Enterprise
 Licence; the PaddleOCR models are Apache-2.0. Check these before using sc-ai's
 face or object detection in a product.
 
@@ -48,8 +48,7 @@ Both of the above come from the same Homebrew tap / apt repo as `simply-cpp` its
 `sc-ai`'s own CMake package doesn't yet declare its dependency on `sc-image`, so when consuming an installed package, find that one explicitly too:
 
 ```cmake
-find_package(sc-image CONFIG REQUIRED)
-find_package(sc-ai CONFIG REQUIRED)
+find_package(sc-ai CONFIG REQUIRED)  # brings sc-image and sc-core
 
 add_executable(myapp main.cpp)
 target_link_libraries(myapp PRIVATE sc::sc-ai)
@@ -66,6 +65,12 @@ int main() {
     std::cout << yolo << std::endl;
 }
 ```
+
+Two COCO object detectors come with simply-cpp-models: `yolo26n`, the nano model (quick: about
+11 ms a frame on an Apple M-series CPU), and `yolo26m`, the medium one (about 2.5 times as long,
+but much surer, and it finds what the nano model misses, such as people in close-up dashcam
+footage). Both take a 640 x 640 picture and give up to 10 detections (they were exported with `max_det=10`), so they're used the same
+way: `sc::yolo yolo{"yolo26m"};`.
 
 `sc::onnx` (`<onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
 
@@ -140,7 +145,8 @@ With `--video` it does the same for a video (MP4, MOV, MKV, AVI and the rest, re
 time by sc-image's `sc::video`), a frame a second by default (`--every SECONDS`, 0 for every frame),
 listing what's in each and then how many frames each kind of object was in. The model loads once,
 and the frames between are skipped without being decoded. `--threshold PERCENT` (default 30) lists
-less certain detections too:
+less certain detections too, and `--model yolo26m` uses the medium model, slower (about 2.5 times
+as long) but much surer, where the nano one (the default) misses things:
 
 ```bash
 sc-ai-demo --video dashcam.mp4 --every 2 --threshold 20
@@ -167,8 +173,9 @@ configure time, so it always matches code that compiles:
 <!-- sc-example: examples/sc-ai-demo.cpp -->
 ```cpp
 sc::console::heading("Loading the model");
-sc::yolo yolo{"yolo26n.onnx"};
-sc::console::show_text("sc::yolo yolo{\"yolo26n.onnx\"};", "loaded in " + std::string(sw));
+const auto model = args.as<std::string>("model"); // a name in simply-cpp-models, or a file
+sc::yolo yolo{model};
+sc::console::show_text("sc::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
 yolo.set_threshold(threshold / 100); // a fraction: 0.3 lists what it's at least 30% sure of
 
 if (video_file.empty()) {

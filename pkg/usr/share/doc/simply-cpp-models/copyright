@@ -8,7 +8,7 @@ for which model is under which, with the licence texts in
   det_10g.onnx, w600k_r50.onnx (InsightFace)
     Non-commercial research use only.
 
-  yolo26n.onnx (Ultralytics YOLO26), numberplate.onnx (trained on yolo26n)
+  yolo26n.onnx, yolo26m.onnx (Ultralytics YOLO26), numberplate.onnx (trained on yolo26n)
     GNU Affero General Public License v3.0, or an Ultralytics Enterprise
     Licence. /opt/simply-cpp/models/licenses/AGPL-3.0.txt
 
