@@ -16,7 +16,8 @@ namespace sc {
 
     class yolo {
     public:
-        yolo(const std::string &model);
+        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()).
+        explicit yolo(const std::string &model, int gpu = 0);
 
         ~yolo();
 

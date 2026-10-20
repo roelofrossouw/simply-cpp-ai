@@ -1,6 +1,8 @@
 #include "onnx.h"
 #include "image.h"
 #include <algorithm>
+#include <stdexcept>
+#include <string>
 #include <iostream>
 #include <onnxruntime_cxx_api.h>
 #include <sc.h>
@@ -32,13 +34,28 @@ namespace sc {
             }
             return false;
         }
+
+        // CUDA devices through the driver API (libcuda, which comes with the NVIDIA driver), loaded
+        // when asked so sc-ai still runs where there is none; 0 when there's no driver or device.
+        int cuda_devices() {
+            void *driver = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
+            if (!driver) return 0;
+            using init_function = int (*)(unsigned);
+            using count_function = int (*)(int *);
+            const auto init = reinterpret_cast<init_function>(dlsym(driver, "cuInit"));
+            const auto count = reinterpret_cast<count_function>(dlsym(driver, "cuDeviceGetCount"));
+            int devices = 0;
+            if (!init || !count || init(0) != 0 || count(&devices) != 0) devices = 0;
+            dlclose(driver);
+            return devices;
+        }
 #endif
 
         class onnx_impl {
         public:
             Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-            onnx_impl(const std::string &Model, const bool use_metal) : model_filename(Model) {
+            onnx_impl(const std::string &Model, const bool use_metal, [[maybe_unused]] const int gpu) : model_filename(Model) {
                 if (!fs::exists(model_filename)) {
                     if (fs::exists(model_filename.string() + ".onnx"))
                         model_filename += ".onnx";
@@ -58,8 +75,11 @@ namespace sc {
                 const auto providers = Ort::GetAvailableProviders();
                 const auto cuda = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider");
                 if (cuda != providers.end() && cuda_runtime_available()) {
+                    if (const int devices = cuda_devices(); gpu < 0 || (devices > 0 && gpu >= devices))
+                        throw std::invalid_argument("No GPU " + std::to_string(gpu) + ": there are " + std::to_string(devices));
                     try {
                         OrtCUDAProviderOptions cuda_options{};
+                        cuda_options.device_id = gpu;
                         options.AppendExecutionProvider_CUDA(cuda_options);
                     } catch (const Ort::Exception &error) {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
@@ -227,7 +247,7 @@ namespace sc {
         };
     }
 
-    onnx::onnx(const std::string &model, const bool use_metal) : impl(new impl::onnx_impl(model, use_metal)) {
+    onnx::onnx(const std::string &model, const bool use_metal, const int gpu) : impl(new impl::onnx_impl(model, use_metal, gpu)) {
     }
 
     onnx::~onnx() { delete impl; }
@@ -272,6 +292,14 @@ namespace sc {
         const auto providers = Ort::GetAvailableProviders();
         return std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end() &&
                impl::cuda_runtime_available();
+#endif
+    }
+
+    int onnx::gpus() {
+#ifdef __APPLE__
+        return 0;
+#else
+        return accelerated() ? impl::cuda_devices() : 0;
 #endif
     }
 
