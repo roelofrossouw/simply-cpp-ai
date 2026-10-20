@@ -87,8 +87,8 @@ namespace sc {
 
         class face_impl {
         public:
-            explicit face_impl() : detector("det_10g.onnx"),
-                                   extractor("w600k_r50.onnx") {
+            explicit face_impl(const int gpu) : detector("det_10g.onnx", true, gpu),
+                                                extractor("w600k_r50.onnx", true, gpu) {
 #ifndef NDEBUG
                 onnx::show_providers();
                 detector.show_shapes();
@@ -189,7 +189,7 @@ namespace sc {
         };
     }
 
-    facedetector::facedetector() : impl(new impl::face_impl()) {
+    facedetector::facedetector(const int gpu) : impl(new impl::face_impl(gpu)) {
     }
 
     facedetector::~facedetector() {

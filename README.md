@@ -106,6 +106,20 @@ for (const auto &detected_face: document.faces()) {
 }
 ```
 
+### Which GPU
+
+Models run on CUDA where its provider and runtime are there (CoreML on Apple platforms), else on
+the CPU. With several GPUs, `sc::onnx`, `sc::yolo` and `sc::facedetector` take the one to use,
+from 0; `sc::onnx::gpus()` says how many there are (0 without CUDA). A GPU that isn't there
+throws `std::invalid_argument`.
+
+```cpp
+// A model on each GPU, for a thread each.
+std::vector<std::unique_ptr<sc::yolo>> models;
+for (int gpu = 0; gpu < std::max(1, sc::onnx::gpus()); ++gpu)
+    models.push_back(std::make_unique<sc::yolo>("yolo26n", gpu));
+```
+
 ### Face detection and reusable face data
 
 `sc::facedetector` returns detected faces as `std::vector<sc::face>`. Each `sc::face` owns normalized 512-value features and can optionally retain its aligned face image:

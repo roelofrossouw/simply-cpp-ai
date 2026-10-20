@@ -47,6 +47,18 @@ int main() {
         CHECK_LT(recogniser.image_size().width(), 1); // dynamic
     }
 
+    SECTION("Models run on the GPU asked for; one that isn't there is refused");
+    {
+        const int gpus = sc::onnx::gpus();
+        cout << gpus << (gpus == 1 ? " GPU" : " GPUs") << endl;
+        CHECK(gpus >= 0);
+        if (gpus > 0) {
+            const sc::yolo last{MODEL.string(), gpus - 1}; // each GPU takes a model
+            CHECK_THROWS_AS(sc::yolo(MODEL.string(), gpus), std::invalid_argument);
+            CHECK_THROWS_AS(sc::yolo(MODEL.string(), -1), std::invalid_argument);
+        }
+    }
+
     SECTION("Nothing found is an empty list, not null");
     {
         const std::vector<float> grey(3 * 320 * 320, 0.5f);

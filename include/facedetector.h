@@ -12,7 +12,8 @@ namespace sc {
 
     class facedetector {
     public:
-        facedetector();
+        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()).
+        explicit facedetector(int gpu = 0);
 
         ~facedetector();
 

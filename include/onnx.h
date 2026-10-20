@@ -46,7 +46,9 @@ namespace sc {
 
     class onnx {
     public:
-        explicit onnx(const std::string &model, bool use_metal = true);
+        /// gpu: the CUDA device to run on, from 0 (see gpus()); throws std::invalid_argument for one
+        /// that isn't there. Without CUDA (and on Apple platforms) it isn't used.
+        explicit onnx(const std::string &model, bool use_metal = true, int gpu = 0);
 
         ~onnx();
 
@@ -75,6 +77,9 @@ namespace sc {
         // Whether models run accelerated: CoreML on Apple platforms, or CUDA where its provider
         // and runtime are available. Without, they run on the CPU (several times slower).
         [[nodiscard]] static bool accelerated();
+
+        /// The CUDA devices models can run on: 0 without CUDA (always on Apple platforms).
+        [[nodiscard]] static int gpus();
 
     private:
         impl::onnx_impl *impl;

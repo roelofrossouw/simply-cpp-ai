@@ -55,7 +55,7 @@ namespace sc {
 
         class yolo_impl {
         public:
-            explicit yolo_impl(const std::string &model) : detector(model) {
+            yolo_impl(const std::string &model, const int gpu) : detector(model, true, gpu) {
                 if (!detector.yolo26_size()) throw std::runtime_error("Model is not yolo26 compatible");
             }
 
@@ -104,7 +104,7 @@ namespace sc {
         };
     }
 
-    yolo::yolo(const std::string &model) : impl(new impl::yolo_impl(model)) {
+    yolo::yolo(const std::string &model, const int gpu) : impl(new impl::yolo_impl(model, gpu)) {
     }
 
     yolo::~yolo() {
