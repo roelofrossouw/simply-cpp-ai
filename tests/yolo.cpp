@@ -2,6 +2,11 @@
 #include <onnx.h>
 #include <ocr.h>
 #include <yolo.h>
+#include <video.h>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <chrono>
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -77,6 +82,55 @@ int main() {
         CHECK(medium_people >= nano_people);
         CHECK(medium_best >= 90);
         CHECK(nano_people > 0);
+    }
+
+    SECTION("A video: each kind's surest detection, as for an image; or, in full, a summary");
+    {
+        // Two seconds at 10 frames a second: one of grey, then one of people at a table.
+        const auto clip_file = fs::temp_directory_path() / "sc-ai-yolo-test.avi";
+        {
+            cv::Mat people = cv::imread((IMAGES / "000000031296.jpg").string());
+            cv::resize(people, people, cv::Size{640, 427});
+            cv::VideoWriter writer{clip_file.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 10, people.size()};
+            CHECK(writer.isOpened());
+            for (int n = 0; n < 10; ++n) writer.write(cv::Mat{people.size(), CV_8UC3, cv::Scalar::all(128)});
+            for (int n = 0; n < 10; ++n) writer.write(people);
+        }
+        const sc::yolo nano{MODEL.string()};
+        sc::video clip{clip_file};
+        const auto summary = nano.detect(clip, std::chrono::milliseconds{0}, sc::yolo::detail::full); // every frame
+        CHECK_EQ(summary["frames"].get<int>(), 20);
+        CHECK_EQ(summary["every"].get<int>(), 0);
+        const auto &person = summary["objects"]["person"];
+        CHECK_EQ(person["count"].get<int>(), 10);           // in the second second only
+        CHECK(person["frame"].get<int>() >= 10);
+        CHECK_EQ(person["time"].get<int>(), person["frame"].get<int>() * 100);
+        CHECK(person["confidence"].get<double>() >= 80);
+        bool listed = false; // the surest frame's own detections include that best person
+        for (const auto &found: person["detections"])
+            listed = listed || (found[5].get<int>() == 0 && found[4].get<double>() == person["confidence"].get<double>());
+        CHECK(listed);
+        double previous = 101; // most certain first
+        for (const auto &[name, kind]: summary["objects"].items()) {
+            CHECK(kind["confidence"].get<double>() <= previous);
+            previous = kind["confidence"].get<double>();
+        }
+        // Without detail::full, what an image gives: each kind's surest detection, most certain first.
+        sc::video again{clip_file};
+        const auto best = nano.detect(again, std::chrono::milliseconds{0});
+        CHECK(best.is_array());
+        CHECK_EQ(best.size(), summary["objects"].size()); // one a kind
+        CHECK_EQ(best.at(0).size(), std::size_t{6});
+        CHECK_EQ(best.at(0)[5].get<int>(), 0); // the person is the surest
+        CHECK_EQ(best.at(0)[4].get<double>(), person["confidence"].get<double>());
+        for (std::size_t i = 1; i < best.size(); ++i) CHECK(best.at(i)[4].get<double>() <= best.at(i - 1)[4].get<double>());
+
+        sc::video grey_only{clip_file};
+        sc::yolo blind{MODEL.string()};
+        blind.set_threshold(100);
+        const auto none = blind.detect(grey_only, std::chrono::seconds(1));
+        CHECK(none.is_array() && none.empty()); // [] when nothing's found, as for an image
+        fs::remove(clip_file);
     }
 
     sc::timer sw;

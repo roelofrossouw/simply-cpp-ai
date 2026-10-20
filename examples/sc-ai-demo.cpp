@@ -58,7 +58,13 @@ int main(int argc, char **argv) {
             {"every", {{"short", "e"}, {"type", "number"}, {"default", 1}, {"value", "SECONDS"},
                        {"help", "with --video, look at a frame this often (0: every frame)"}}},
             {"threshold", {{"short", "t"}, {"type", "number"}, {"value", "PERCENT"},
-                           {"help", "list what it's at least this sure of, 0 to 100 (default: 30)"}}}}},
+                           {"help", "list what it's at least this sure of, 0 to 100 (default: 30)"}}},
+            {"json", {{"short", "j"}, {"type", "boolean"},
+                      {"help", "print only JSON: the detections, for a video each kind of object's surest one, "
+                               "in the same form as for a photo"}}},
+            {"full", {{"short", "f"}, {"type", "boolean"},
+                      {"help", "with --json and --video, a summary instead: each kind of object's count, highest "
+                               "confidence, and every detection on the frame where it was highest"}}}}},
         {"positional", {
             {"photo", {{"required", false}, {"help", "the photo to detect objects in"}}}}}}};
 
@@ -70,6 +76,24 @@ int main(int argc, char **argv) {
         if (!(every_seconds >= 0)) throw std::invalid_argument("--every takes 0 seconds or more");
         const double threshold = args.as<double>("threshold", 30);
         if (!(threshold >= 0 && threshold <= 100)) throw std::invalid_argument("--threshold takes 0 to 100 (percent)");
+        const std::chrono::milliseconds every{std::llround(every_seconds * 1000)};
+
+        if (args.as<bool>("json")) {
+            // Just the result, for another program: what yolo.to_json() gives for a photo, or
+            // yolo.detect(video)'s summary for a video.
+            if (source.empty() && video_file.empty()) throw std::invalid_argument("--json needs a photo or --video");
+            sc::yolo yolo{args.as<std::string>("model")};
+            yolo.set_threshold(threshold / 100);
+            if (video_file.empty()) {
+                yolo.detect(std::filesystem::path{source});
+                std::cout << yolo.to_json().dump(2) << '\n';
+            } else {
+                sc::video clip{video_file};
+                const auto amount = args.as<bool>("full") ? sc::yolo::detail::full : sc::yolo::detail::best;
+                std::cout << yolo.detect(clip, every, amount).dump(2) << '\n';
+            }
+            return 0;
+        }
 
         sc::console::title("simply-cpp ai: object detection with YOLO");
         if (source.empty() && video_file.empty()) {
@@ -107,7 +131,6 @@ int main(int argc, char **argv) {
             about << clip.size() << ", " << clip.fps() << " frames a second, " << clock(clip.duration());
             sc::console::show_text("sc::video clip{\"" + video_file.string() + "\"};", about.str());
 
-            const std::chrono::milliseconds every{std::llround(every_seconds * 1000)};
             std::map<std::string, int> frames_with; // how many frames each kind of object was in
             int looked_at = 0;
             sc::timer detecting;

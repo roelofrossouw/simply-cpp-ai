@@ -161,6 +161,26 @@ In 8 frames, in 00:00:00.097412000
   person: in 8 frames
 ```
 
+`--json` prints only JSON, for another program to read, and a video reads the same as a photo:
+the detections as `yolo.to_json()` gives them (`[centre x %, centre y %, width %, height %,
+confidence %, type]`), for a video each kind of object's surest one (`yolo.detect(clip, every)`),
+most certain first:
+
+```json
+[[38.14, 56.46, 75.2, 84.97, 93.6, 0], [37.64, 73.66, 11.68, 7.25, 68.8, 67]]
+```
+
+With `--full` (`sc::yolo::detail::full`) a video gives a summary instead: for each kind of object,
+how many frames it was in, how sure it was at most, and that frame's number, time and detections
+(all of them, as for a photo):
+
+```json
+{"frames": 15, "every": 1000, "objects": {
+  "person": {"count": 15, "confidence": 93.6, "frame": 45, "time": 2987,
+             "detections": [[38.14, 56.46, 75.2, 84.97, 93.6, 0], [37.41, 72.97, 11.19, 13.02, 32.1, 67]]},
+  "cell phone": {"count": 9, "confidence": 68.8, "frame": 105, "time": 6969, "detections": [...]}}}
+```
+
 Without a photo or video it uses a small rendered image with nothing in it, which still
 shows the model, ONNX Runtime and sc-image loading and running. It is installed
 with the runtime package (`simply-cpp-ai`), so it works without the `-dev`
@@ -196,7 +216,6 @@ if (video_file.empty()) {
     about << clip.size() << ", " << clip.fps() << " frames a second, " << clock(clip.duration());
     sc::console::show_text("sc::video clip{\"" + video_file.string() + "\"};", about.str());
 
-    const std::chrono::milliseconds every{std::llround(every_seconds * 1000)};
     std::map<std::string, int> frames_with; // how many frames each kind of object was in
     int looked_at = 0;
     sc::timer detecting;

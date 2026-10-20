@@ -1,6 +1,9 @@
 #include "yolo.h"
 #include "image.h"
 #include "onnx.h"
+#include "video.h"
+#include <algorithm>
+#include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -130,6 +133,57 @@ namespace sc {
 
     void yolo::detect(const image &input) const {
         impl->run(input);
+    }
+
+    nlohmann::ordered_json yolo::detect(video &clip, const std::chrono::milliseconds every, const detail amount) const {
+        // Each kind of object: the frames it was in, its surest detection and the frame that was in.
+        struct best {
+            std::string name;
+            int count = 0;
+            double confidence = -1;
+            std::size_t frame = 0;
+            long long time = 0;
+            nlohmann::ordered_json detection;
+            nlohmann::ordered_json detections; // the frame's, for detail::full
+        };
+        std::map<std::string, best> found;
+        int frames = 0;
+        while (const auto frame = clip.next(every)) {
+            impl->run(frame->picture);
+            ++frames;
+            const auto detections = impl->json();
+            std::map<std::string, const nlohmann::ordered_json *> here; // each kind in this frame: its surest detection
+            for (const auto &each: detections) {
+                const auto *&surest = here[object_name(each[5].get<int>())];
+                if (!surest || each[4].get<double>() > (*surest)[4].get<double>()) surest = &each;
+            }
+            for (const auto &[name, surest]: here) {
+                auto &kind = found[name];
+                kind.name = name;
+                ++kind.count;
+                if (const double confidence = (*surest)[4].get<double>(); confidence > kind.confidence) {
+                    kind.confidence = confidence;
+                    kind.frame = frame->number;
+                    kind.time = frame->time.count();
+                    kind.detection = *surest;
+                    if (amount == detail::full) kind.detections = detections;
+                }
+            }
+        }
+        std::vector<best> kinds;
+        for (auto &[name, kind]: found) kinds.push_back(std::move(kind));
+        std::ranges::stable_sort(kinds, [](const best &a, const best &b) { return a.confidence > b.confidence; });
+
+        if (amount == detail::best) { // as for an image: [] rather than null when nothing's found
+            auto result = nlohmann::ordered_json::array();
+            for (const auto &kind: kinds) result.push_back(kind.detection);
+            return result;
+        }
+        nlohmann::ordered_json objects = nlohmann::ordered_json::object(); // {} rather than null when nothing's found
+        for (const auto &kind: kinds)
+            objects[kind.name] = {{"count", kind.count}, {"confidence", kind.confidence}, {"frame", kind.frame},
+                                  {"time", kind.time}, {"detections", kind.detections}};
+        return {{"frames", frames}, {"every", every.count()}, {"objects", objects}};
     }
 
     image yolo::annotated() const {
