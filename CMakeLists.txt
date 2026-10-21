@@ -14,7 +14,7 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 
 # The demos use sc::console subheadings and SC_SHOW with commas (1.5.15).
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.8.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 1.20.0)
 find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image 5.3.1)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
@@ -103,5 +103,5 @@ target_link_libraries(run-ocr PRIVATE sc::sc-ai)
 #############
 package_sc_module(
         DEPENDS simply-cpp-onnxruntime simply-cpp-models
-        DEV_DEPENDS "simply-cpp-dev (>= 1.8.0~)" "simply-cpp-image-dev (>= 5.3.1~)" simply-cpp-onnxruntime simply-cpp-models
+        DEV_DEPENDS "simply-cpp-dev (>= 1.20.0~)" "simply-cpp-image-dev (>= 5.3.1~)" simply-cpp-onnxruntime simply-cpp-models
 )
