@@ -1,5 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <numeric>
+#include <ostream>
 #include <string>
 #include <vector>
 #include "image.h"
@@ -25,9 +31,7 @@ namespace sc {
         // The number of values in the output: the product of its dimensions (0 for no shape).
         [[nodiscard]] int data_size() const {
             if (shape.empty()) return 0;
-            int64_t size = 1;
-            for (const auto &s: shape) size *= s;
-            return static_cast<int>(size);
+            return static_cast<int>(std::accumulate(shape.begin(), shape.end(), int64_t{1}, std::multiplies<>()));
         }
 
         [[nodiscard]] int max_element() const {
@@ -35,9 +39,7 @@ namespace sc {
         }
 
         friend std::ostream &operator <<(std::ostream &os, const output &rhs) {
-            os << "[";
-            for (const auto s: rhs.shape) os << " " << s;
-            return os << " ]";
+            return os << static_cast<std::string>(rhs);
         }
 
         std::vector<int64_t> shape;
@@ -51,6 +53,10 @@ namespace sc {
         explicit onnx(const std::string &model, bool use_metal = true, int gpu = 0);
 
         ~onnx();
+
+        onnx(onnx &&) noexcept;
+
+        onnx &operator=(onnx &&) noexcept;
 
         /// Runs one inference for an RGB image, given to the model as (pixel - 127.5) / 255.
         std::vector<output> process_image(const image &img) const;
@@ -82,6 +88,6 @@ namespace sc {
         [[nodiscard]] static int gpus();
 
     private:
-        impl::onnx_impl *impl;
+        std::unique_ptr<impl::onnx_impl> impl;
     };
 } // sc

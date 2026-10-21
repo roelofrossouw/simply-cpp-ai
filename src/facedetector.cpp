@@ -1,5 +1,6 @@
 #include "facedetector.h"
 #include "onnx.h"
+#include <optional>
 #include <stdexcept>
 
 using namespace std;
@@ -161,7 +162,7 @@ namespace sc {
             vector<face> run(const image &source, const bool include_face_images) {
                 detections.clear();
                 if (source.empty()) throw invalid_argument{"Cannot detect faces in an empty image"};
-                original = make_unique<image>(source);
+                original = source;
                 image input{*original};
                 input.snap_to_size(stride, valid_sizes);
                 auto out = detector.process_image(input);
@@ -181,7 +182,7 @@ namespace sc {
             onnx detector; // Model to locate the face
             onnx extractor; // Model to extract features
             vector<detection> detections;
-            unique_ptr<image> original;
+            optional<image> original;
 
         private:
             float threshold_{0.6f};
@@ -189,12 +190,14 @@ namespace sc {
         };
     }
 
-    facedetector::facedetector(const int gpu) : impl(new impl::face_impl(gpu)) {
+    facedetector::facedetector(const int gpu) : impl(std::make_unique<impl::face_impl>(gpu)) {
     }
 
-    facedetector::~facedetector() {
-        delete impl;
-    }
+    facedetector::~facedetector() = default;
+
+    facedetector::facedetector(facedetector &&) noexcept = default;
+
+    facedetector &facedetector::operator=(facedetector &&) noexcept = default;
 
     void facedetector::set_threshold(const double threshold) {
         impl->set_threshold(threshold);

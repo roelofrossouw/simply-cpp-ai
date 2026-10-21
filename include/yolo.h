@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <ostream>
+#include <memory>
 #include <string>
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -20,6 +21,10 @@ namespace sc {
         explicit yolo(const std::string &model, int gpu = 0);
 
         ~yolo();
+
+        yolo(yolo &&) noexcept;
+
+        yolo &operator=(yolo &&) noexcept;
 
         operator std::string() const;
 
@@ -66,6 +71,6 @@ namespace sc {
         [[nodiscard]] static std::string object_name(int type);
 
     private:
-        impl::yolo_impl *impl;
+        std::unique_ptr<impl::yolo_impl> impl;
     };
 } // sc

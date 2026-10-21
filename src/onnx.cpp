@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <iostream>
+#include <memory>
 #include <onnxruntime_cxx_api.h>
 #include <sc.h>
 #ifdef __APPLE__
@@ -33,6 +34,11 @@ namespace sc {
                 }
             }
             return false;
+        }
+
+        bool cuda_provider_available() {
+            const auto providers = Ort::GetAvailableProviders();
+            return std::ranges::find(providers, "CUDAExecutionProvider") != providers.end();
         }
 
         // CUDA devices through the driver API (libcuda, which comes with the NVIDIA driver), loaded
@@ -72,9 +78,8 @@ namespace sc {
                     Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
                 }
 #else
-                const auto providers = Ort::GetAvailableProviders();
-                const auto cuda = std::find(providers.begin(), providers.end(), "CUDAExecutionProvider");
-                if (cuda != providers.end() && cuda_runtime_available()) {
+                const bool cuda = cuda_provider_available();
+                if (cuda && cuda_runtime_available()) {
                     if (const int devices = cuda_devices(); gpu < 0 || (devices > 0 && gpu >= devices))
                         throw std::invalid_argument("No GPU " + std::to_string(gpu) + ": there are " + std::to_string(devices));
                     try {
@@ -84,7 +89,7 @@ namespace sc {
                     } catch (const Ort::Exception &error) {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
                     }
-                } else if (cuda != providers.end()) {
+                } else if (cuda) {
                     std::cerr << "CUDA execution provider found, but libcublasLt is unavailable; "
                             "using the default provider\n(Consider installing cuda-toolkit-13-4 to enable GPU usage)";
                 }
@@ -98,11 +103,7 @@ namespace sc {
                 std::cerr << "Loading model " << model_filename << std::endl;
 #endif
 
-                // options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-                // options.SetIntraOpNumThreads(10);
-
-                session = new Ort::Session(env, model_filename.string().c_str(), options);
-
+                session = std::make_unique<Ort::Session>(env, model_filename.string().c_str(), options);
 
                 for (const auto &val: session->GetInputs())
                     inputs.emplace_back(val.GetName().c_str(), val.TypeInfo().GetTensorTypeAndShapeInfo().GetShape());
@@ -114,8 +115,6 @@ namespace sc {
                 std::cerr << "Loaded in " << sw << std::endl;
 #endif
             }
-
-            ~onnx_impl() { delete session; }
 
             std::vector<output> run(const val &inputTensor) {
                 results = session->Run(run_options,
@@ -192,18 +191,15 @@ namespace sc {
                 std::cout << "Input count: " << inputs.size() << "\n";
                 std::cout << "Output count: " << outputs.size() << "\n";
 
-                for (const auto &[name, shape]: inputs) {
-                    std::cout << "Input name: " << name;
-                    std::cout << "; shape: [ ";
-                    for (const auto &s: shape) std::cout << s << " ";
-                    std::cout << "]\n";
-                }
-                for (const auto &[name, shape]: outputs) {
-                    std::cout << "Output name: " << name;
-                    std::cout << "; shape: [ ";
-                    for (const auto &s: shape) std::cout << s << " ";
-                    std::cout << "]\n";
-                }
+                const auto show = [](const char *kind, const auto &tensors) {
+                    for (const auto &[name, shape]: tensors) {
+                        std::cout << kind << " name: " << name << "; shape: [ ";
+                        for (const auto &s: shape) std::cout << s << " ";
+                        std::cout << "]\n";
+                    }
+                };
+                show("Input", inputs);
+                show("Output", outputs);
             }
 
             [[nodiscard]] int yolo26_size() const {
@@ -236,7 +232,7 @@ namespace sc {
 #endif
             Ort::SessionOptions options;
             Ort::RunOptions run_options{nullptr};
-            Ort::Session *session;
+            std::unique_ptr<Ort::Session> session;
             std::vector<val> results;
 
             std::vector<std::pair<std::string, std::vector<int64_t> > > inputs;
@@ -247,10 +243,14 @@ namespace sc {
         };
     }
 
-    onnx::onnx(const std::string &model, const bool use_metal, const int gpu) : impl(new impl::onnx_impl(model, use_metal, gpu)) {
+    onnx::onnx(const std::string &model, const bool use_metal, const int gpu) : impl(std::make_unique<impl::onnx_impl>(model, use_metal, gpu)) {
     }
 
-    onnx::~onnx() { delete impl; }
+    onnx::~onnx() = default;
+
+    onnx::onnx(onnx &&) noexcept = default;
+
+    onnx &onnx::operator=(onnx &&) noexcept = default;
 
     std::vector<output> onnx::process_image(const image &img) const {
         return process_image(img, 1.0 / 255.0, 127.5);
@@ -289,9 +289,7 @@ namespace sc {
 #ifdef __APPLE__
         return true;
 #else
-        const auto providers = Ort::GetAvailableProviders();
-        return std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") != providers.end() &&
-               impl::cuda_runtime_available();
+        return impl::cuda_provider_available() && impl::cuda_runtime_available();
 #endif
     }
 

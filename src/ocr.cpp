@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -102,6 +103,16 @@ namespace sc {
                 return angle;
             }
 
+            // How far apart two directions are, 0 to 90 degrees: directions repeat every 180.
+            double angle_apart(const double a, const double b) {
+                const double apart = std::fmod(std::abs(normalized_angle(a) - normalized_angle(b)), 180.0);
+                return std::min(apart, 180 - apart);
+            }
+
+            double radians(const double degrees) { return degrees * std::numbers::pi / 180.0; }
+
+            double degrees(const double radians) { return radians * 180.0 / std::numbers::pi; }
+
             // Drops regions whose angle or height doesn't match any group of others: specks and
             // lines on a busy document. A page with only a few regions gives DBSCAN too little to
             // go on - with fewer regions than minimum_neighbors every one would be noise - so the
@@ -155,13 +166,12 @@ namespace sc {
                                          padding.width()) * original.size().width() / content.width();
                 const double center_y = (bounds.center().y() * detector_input.size().height() / map_size.height() -
                                          padding.height()) * original.size().height() / content.height();
-                const double angle = bounds.angle() * std::numbers::pi / 180.0;
+                const double angle = radians(bounds.angle());
                 const double width_scale = std::hypot(std::cos(angle) * scale_x, std::sin(angle) * scale_y);
                 const double height_scale = std::hypot(std::sin(angle) * scale_x, std::cos(angle) * scale_y);
                 double width = bounds.width() * width_scale;
                 double height = bounds.height() * height_scale;
-                double mapped_angle = std::atan2(std::sin(angle) * scale_y, std::cos(angle) * scale_x) *
-                                      180.0 / std::numbers::pi;
+                double mapped_angle = degrees(std::atan2(std::sin(angle) * scale_y, std::cos(angle) * scale_x));
                 return {
                     {center_x, center_y},
                     {width, height},
@@ -191,13 +201,12 @@ namespace sc {
                 const double centre = peak * 5 + 2.5;
                 for (const auto &region: regions) {
                     if (region.width() < region.height() * LongRegionAspect) continue;
-                    const double away = std::fmod(std::abs(normalized_angle(region.angle()) - centre), 180.0);
-                    if (std::min(away, 180 - away) > 15) continue;
-                    const double doubled = 2 * region.angle() * std::numbers::pi / 180.0;
+                    if (angle_apart(region.angle(), centre) > 15) continue;
+                    const double doubled = radians(2 * region.angle());
                     x += region.width() * std::cos(doubled);
                     y += region.width() * std::sin(doubled);
                 }
-                return normalized_angle(std::atan2(y, x) / 2 * 180.0 / std::numbers::pi);
+                return normalized_angle(degrees(std::atan2(y, x) / 2));
             }
 
             std::vector<rotated_rect> along_text_direction(std::vector<rotated_rect> regions) {
@@ -206,8 +215,7 @@ namespace sc {
                     const double longer = std::max(region.width(), region.height());
                     const double shorter = std::max(1e-9, std::min(region.width(), region.height()));
                     if (longer >= shorter * ShortRegionAspect) continue;
-                    const double across = std::fmod(std::abs(normalized_angle(region.angle()) - direction), 180.0);
-                    if (std::min(across, 180 - across) <= 45) continue;
+                    if (angle_apart(region.angle(), direction) <= 45) continue;
                     region = {region.center(), size{region.height(), region.width()}, normalized_angle(region.angle() + 90)};
                 }
                 return regions;
@@ -219,14 +227,13 @@ namespace sc {
             // are much further apart than that.
             std::vector<rotated_rect> joined_line_pieces(std::vector<rotated_rect> regions) {
                 const auto same_line = [](const rotated_rect &a, const rotated_rect &b, double &u, double &v) {
-                    const double across = std::fmod(std::abs(normalized_angle(a.angle()) - normalized_angle(b.angle())), 180.0);
-                    if (std::min(across, 180 - across) > 5) return false;
+                    if (angle_apart(a.angle(), b.angle()) > 5) return false;
                     const double height = std::max(a.height(), b.height());
                     if (std::min(a.height(), b.height()) < height * 0.6) return false;
-                    const double radians = a.angle() * std::numbers::pi / 180.0;
+                    const double turn = radians(a.angle());
                     const double dx = b.center().x() - a.center().x(), dy = b.center().y() - a.center().y();
-                    u = dx * std::cos(radians) + dy * std::sin(radians);
-                    v = -dx * std::sin(radians) + dy * std::cos(radians);
+                    u = dx * std::cos(turn) + dy * std::sin(turn);
+                    v = -dx * std::sin(turn) + dy * std::cos(turn);
                     if (std::abs(v) > height * 0.3) return false;
                     return std::abs(u) - (a.width() + b.width()) / 2 <= height * JoinGapHeights;
                 };
@@ -243,10 +250,10 @@ namespace sc {
                             const double across_from = std::min(-a.height() / 2, v - b.height() / 2);
                             const double across_to = std::max(a.height() / 2, v + b.height() / 2);
                             const double mid_u = (along_from + along_to) / 2, mid_v = (across_from + across_to) / 2;
-                            const double radians = a.angle() * std::numbers::pi / 180.0;
+                            const double turn = radians(a.angle());
                             regions[i] = {
-                                point{a.center().x() + mid_u * std::cos(radians) - mid_v * std::sin(radians),
-                                      a.center().y() + mid_u * std::sin(radians) + mid_v * std::cos(radians)},
+                                point{a.center().x() + mid_u * std::cos(turn) - mid_v * std::sin(turn),
+                                      a.center().y() + mid_u * std::sin(turn) + mid_v * std::cos(turn)},
                                 size{along_to - along_from, across_to - across_from}, a.angle()
                             };
                             regions.erase(regions.begin() + static_cast<std::ptrdiff_t>(j));
@@ -593,9 +600,7 @@ namespace sc {
             }
 
             void run(const fs::path &image_path, const double minimum_confidence) {
-                validate_minimum_confidence(minimum_confidence);
-                const image input{image_path.string()};
-                run(input, minimum_confidence);
+                run(image{image_path.string()}, minimum_confidence);
             }
 
             void set_auto_rotate(const bool value) { auto_rotate = value; }
@@ -605,7 +610,7 @@ namespace sc {
             void run(const image &input, const double minimum_confidence) {
                 validate_minimum_confidence(minimum_confidence);
                 lines_.clear();
-                original = std::make_unique<image>(input);
+                original = input;
                 // Read upright: then all of a page's lines are cut out the same way up.
                 rotation_ = auto_rotate ? ocr::upright_rotation(input) : 0;
                 image upright{input};
@@ -774,17 +779,19 @@ namespace sc {
             bool auto_rotate = true;
             int rotation_ = 0;
             ocr_recognizer recognizer;
-            std::unique_ptr<image> original;
+            std::optional<image> original;
             std::vector<ocr::line> lines_;
         };
     }
 
-    ocr_detector::ocr_detector(const std::string &model) : impl(new impl::ocr_detector_impl(model)) {
+    ocr_detector::ocr_detector(const std::string &model) : impl(std::make_unique<impl::ocr_detector_impl>(model)) {
     }
 
-    ocr_detector::~ocr_detector() {
-        delete impl;
-    }
+    ocr_detector::~ocr_detector() = default;
+
+    ocr_detector::ocr_detector(ocr_detector &&) noexcept = default;
+
+    ocr_detector &ocr_detector::operator=(ocr_detector &&) noexcept = default;
 
     void ocr_detector::set_threshold(const double threshold) {
         impl->set_threshold(threshold);
@@ -824,12 +831,14 @@ namespace sc {
     }
 
     ocr_recognizer::ocr_recognizer(const std::string &model, const fs::path &dictionary)
-        : impl(new impl::ocr_recognizer_impl(model, dictionary)) {
+        : impl(std::make_unique<impl::ocr_recognizer_impl>(model, dictionary)) {
     }
 
-    ocr_recognizer::~ocr_recognizer() {
-        delete impl;
-    }
+    ocr_recognizer::~ocr_recognizer() = default;
+
+    ocr_recognizer::ocr_recognizer(ocr_recognizer &&) noexcept = default;
+
+    ocr_recognizer &ocr_recognizer::operator=(ocr_recognizer &&) noexcept = default;
 
     void ocr_recognizer::set_threshold(const double threshold) {
         impl->set_threshold(threshold);
@@ -849,12 +858,14 @@ namespace sc {
 
     ocr::ocr(const std::string &detection_model, const std::string &recognition_model,
              const std::filesystem::path &dictionary)
-        : impl(new impl::ocr_impl(detection_model, recognition_model, dictionary)) {
+        : impl(std::make_unique<impl::ocr_impl>(detection_model, recognition_model, dictionary)) {
     }
 
-    ocr::~ocr() {
-        delete impl;
-    }
+    ocr::~ocr() = default;
+
+    ocr::ocr(ocr &&) noexcept = default;
+
+    ocr &ocr::operator=(ocr &&) noexcept = default;
 
     ocr::operator std::string() const {
         return impl->json().dump();
