@@ -10,7 +10,7 @@ namespace sc {
         static array STRIDES = {8, 16, 32};
         constexpr int stride = 32;
 #ifdef __APPLE__
-        // metal uses first size and makes it static, other engines should be able to use any size...
+        // CoreML fixes the input size it first sees; other providers take any of these.
         vector<size_i> valid_sizes = {{640, 640}};
 #else
         vector<size_i> valid_sizes = {
@@ -179,8 +179,8 @@ namespace sc {
                 return result;
             }
 
-            onnx detector; // Model to locate the face
-            onnx extractor; // Model to extract features
+            onnx detector;
+            onnx extractor;
             vector<detection> detections;
             optional<image> original;
 

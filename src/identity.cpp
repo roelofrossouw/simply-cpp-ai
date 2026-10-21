@@ -35,8 +35,6 @@ namespace sc {
             rect box;
         };
 
-        // ---------------------------------------------------------------- text
-
         static string upper(string value) {
             ranges::transform(value, value.begin(),
                               [](const unsigned char c) { return static_cast<char>(toupper(c)); });
@@ -72,7 +70,6 @@ namespace sc {
             return trim(result);
         }
 
-        // The runs of letters in value.
         static size_t word_count(const string &value) {
             size_t count{};
             bool in_word = false;
@@ -95,8 +92,6 @@ namespace sc {
         static double vertical_gap(const rect &a, const rect &b) {
             return max({0.0, a.top() - b.bottom(), b.top() - a.bottom()});
         }
-
-        // ---------------------------------------------------------------- dates
 
         static constexpr array<string_view, 12> MONTHS = {
             "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
@@ -175,8 +170,6 @@ namespace sc {
             return {iso, named, named_padded};
         }
 
-        // --------------------------------------------------- identity numbers
-
         static bool luhn_valid(const string &digits) {
             int total = 0;
             for (size_t i = 0; i < digits.size(); ++i) {
@@ -189,8 +182,6 @@ namespace sc {
             }
             return total % 10 == 0;
         }
-
-        // ----------------------------------------------------------------- MRZ
 
         static int mrz_value(const char c) {
             if (c >= '0' && c <= '9') return c - '0';
@@ -493,11 +484,8 @@ namespace sc {
             }) || has_document_word(value);
         }
 
-        // -------------------------------------------------------- field labels
-
-        // Returns the part of a line that follows its first n alphanumeric
-        // characters, so a value can be taken from after a label that was
-        // matched with its punctuation stripped.
+        // Where text goes on after its first alnum_count letters and digits (npos when it has
+        // fewer), so a value can be taken from after a label matched with its punctuation stripped.
         static size_t after_alnum(const string &text, const size_t alnum_count) {
             size_t seen = 0;
             for (size_t i = 0; i < text.size(); ++i) {
@@ -577,7 +565,6 @@ namespace sc {
             });
         }
 
-        // ------------------------------------------------------------- the OCR
         static ocr &recognizer() {
             static thread_local ocr instance;
             static thread_local const bool configured = (instance.set_auto_rotate(false), true); // rotations are chosen here
@@ -609,8 +596,6 @@ namespace sc {
             reader.detect(input, 0); // every line: populate() leaves out the doubtful ones but for the MRZ
             return make_text_lines(reader.lines());
         }
-
-        // ------------------------------------------------------------ assembly
 
         struct number_hit {
             string number;
@@ -652,7 +637,6 @@ namespace sc {
                 return read(input, face_detection);
             }
 
-
             static identity read(const image &input, const bool face_detection) {
                 if (input.empty()) throw invalid_argument{"Cannot read identity from an empty image"};
                 identity best;
@@ -664,8 +648,8 @@ namespace sc {
                 }
 
                 // Read it the way up the orientation model says. Only when that misses fields, try
-                // it turned a quarter either way too: an upside-down reading is caught already,
-                // since each line is also read upside down.
+                // it turned a quarter either way too: an upside-down page is caught already, as
+                // sc::ocr reads lines the way up most of the page's lines are.
                 const int upright = ocr::upright_rotation(input);
                 best.rotation_ = upright;
                 populate(best, recognise(turned(input, upright)));
@@ -1058,8 +1042,6 @@ namespace sc {
             }
         };
     } // namespace impl
-
-    // ------------------------------------------------------------- public API
 
     int identity::verification::score() const noexcept {
         if (!luhn) return 0;

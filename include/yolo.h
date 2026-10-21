@@ -61,7 +61,6 @@ namespace sc {
                                                     detail amount = detail::best) const;
 
         /// The objects found, each boxed and labelled, on a copy of the image read last: to save or draw on.
-
         [[nodiscard]] image annotated() const;
 
         nlohmann::ordered_json to_json() const;
