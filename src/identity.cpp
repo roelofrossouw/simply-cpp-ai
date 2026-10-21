@@ -64,13 +64,36 @@ namespace sc {
             return value.substr(begin, end - begin + 1);
         }
 
-        // Keeps only the characters that belong in a printed name.
         static string clean_name(const string &value) {
             string result;
             for (const unsigned char c: upper(trim(value))) {
                 if (isalpha(c) || c == ' ' || c == '-' || c == '\'') result += static_cast<char>(c);
             }
             return trim(result);
+        }
+
+        // The runs of letters in value.
+        static size_t word_count(const string &value) {
+            size_t count{};
+            bool in_word = false;
+            for (const unsigned char c: value) {
+                if (isalpha(c)) {
+                    if (!in_word) ++count;
+                    in_word = true;
+                } else {
+                    in_word = false;
+                }
+            }
+            return count;
+        }
+
+        // The space between two boxes side by side, or 0 when they overlap that way.
+        static double horizontal_gap(const rect &a, const rect &b) {
+            return max({0.0, a.left() - b.right(), b.left() - a.right()});
+        }
+
+        static double vertical_gap(const rect &a, const rect &b) {
+            return max({0.0, a.top() - b.bottom(), b.top() - a.bottom()});
         }
 
         // ---------------------------------------------------------------- dates
@@ -324,6 +347,16 @@ namespace sc {
             }
         };
 
+        // Text as an MRZ holds it: uppercase letters, digits and fillers (<).
+        static string mrz_characters(const string &value) {
+            string result;
+            result.reserve(value.size());
+            for (const unsigned char c: upper(value)) {
+                if (isalnum(c) || c == '<') result += static_cast<char>(c);
+            }
+            return result;
+        }
+
         struct mrz_result {
             mrz_line2 line2;
             size_t line_index;
@@ -334,11 +367,7 @@ namespace sc {
             optional<mrz_result> best;
             for (size_t line_index = 0; line_index < lines.size(); ++line_index) {
                 const auto &line = lines[line_index];
-                string window;
-                window.reserve(line.packed.size());
-                for (const unsigned char c: upper(line.packed)) {
-                    if (isalnum(c) || c == '<') window += static_cast<char>(c);
-                }
+                const string window = mrz_characters(line.packed);
                 if (window.size() < mrz_line2::length) continue;
                 for (size_t start = 0; start + mrz_line2::length <= window.size(); ++start) {
                     mrz_line2 candidate;
@@ -364,32 +393,25 @@ namespace sc {
                 vector<const text_line *> rest;
                 for (const auto &other: lines) {
                     if (&other == &line || other.box.left() < line.box.right() - row_tolerance) continue;
-                    if (std::abs((other.box.top() + other.box.height() / 2) - (line.box.top() + line.box.height() / 2)) > row_tolerance) continue;
+                    if (std::abs(other.box.center().y() - line.box.center().y()) > row_tolerance) continue;
                     rest.push_back(&other);
                 }
                 ranges::sort(rest, {}, [](const text_line *l) { return l->box.left(); });
                 for (const auto *other: rest) row += other->packed;
 
-                string window;
-                window.reserve(row.size());
-                for (const unsigned char c: upper(row)) {
-                    if (isalnum(c) || c == '<') window += static_cast<char>(c);
-                }
+                string window = mrz_characters(row);
                 if (window.size() < mrz_line1::minimum_length) continue;
                 if (window.size() < mrz_line1::length) window.append(mrz_line1::length - window.size(), '<');
 
-                const double vertical_gap = line2.box.top() - line.box.bottom();
-                const double horizontal_gap = max({
-                    0.0, line.box.left() - line2.box.right(), line2.box.left() - line.box.right()
-                });
+                const double below = line2.box.top() - line.box.bottom();
+                const double beside = horizontal_gap(line.box, line2.box);
                 const double max_gap = max(line.box.height(), line2.box.height()) * 3;
-                if (vertical_gap < -line2.box.height() || vertical_gap > max_gap || horizontal_gap > max_gap)
-                    continue;
+                if (below < -line2.box.height() || below > max_gap || beside > max_gap) continue;
 
                 for (size_t start = 0; start + mrz_line1::length <= window.size(); ++start) {
                     mrz_line1 candidate;
                     if (!candidate.parse(string_view{window}.substr(start, mrz_line1::length))) continue;
-                    const double score = max(0.0, vertical_gap) + horizontal_gap;
+                    const double score = max(0.0, below) + beside;
                     if (score >= best_score) continue;
                     best_score = score;
                     best = std::move(candidate);
@@ -398,13 +420,15 @@ namespace sc {
             return best;
         }
 
-        static constexpr array<string_view, 26> CAPTIONS = {
+        // Printed captions and headings, found anywhere in a line's letters.
+        static constexpr auto CAPTIONS = to_array<string_view>({
             "SURNAME", "VANSURNAME", "GIVENNAMES", "FORENAMES", "NAMES", "VOORNAME", "PRENOMS", "NOM",
             "NATIONALIT", "COUNTRYOFBIRTH", "PLACEOFBIRTH", "GEBOORTEDISTRIK", "STATUS", "DATEISSUED",
             "DATEOFISSUE", "DATUMUITGEREIK", "DATEOFBIRTH", "GEBOORTEDATUM", "DATEOFEXPIRY", "DATEEXPIRES",
-            "PASSPORTNO", "IDENTITYNUMBER",
-            "IDENTITYNO", "IDNO", "SEX", "GESLAG"
-        };
+            "PASSPORTNO", "IDENTITYNUMBER", "IDENTITYNO", "IDNO", "SEX", "GESLAG",
+            "SOUTHAFRICA", "REPUBLIC", "SABURGER", "SACITIZEN", "BINNELANDSESAKE", "ANDSESAKE", "CITIZEN",
+            "IDENTITEITSDOKUMENT", "ADRESVERANDERING", "GEREGISTREERDE"
+        });
 
         // Words printed on the documents themselves, as they read in English, Afrikaans and the
         // passport's French and Spanish: never a name. Matched loosely (they misread too - PASPORT,
@@ -464,15 +488,9 @@ namespace sc {
         }
 
         static bool is_caption(const string &value) {
-            return value.find("SOUTHAFRICA") != string::npos || value.find("REPUBLIC") != string::npos ||
-                   value.find("SABURGER") != string::npos || value.find("SACITIZEN") != string::npos ||
-                   value.find("BINNELANDSESAKE") != string::npos ||
-                   value.find("ANDSESAKE") != string::npos || value.find("CITIZEN") != string::npos ||
-                   value.find("IDENTITEITSDOKUMENT") != string::npos ||
-                   value.find("ADRESVERANDERING") != string::npos || value.find("GEREGISTREERDE") != string::npos ||
-                   ranges::any_of(CAPTIONS, [&value](const string_view caption) {
-                       return value.find(caption) != string::npos;
-                   }) || has_document_word(value);
+            return ranges::any_of(CAPTIONS, [&value](const string_view caption) {
+                return value.find(caption) != string::npos;
+            }) || has_document_word(value);
         }
 
         // -------------------------------------------------------- field labels
@@ -480,23 +498,13 @@ namespace sc {
         // Returns the part of a line that follows its first n alphanumeric
         // characters, so a value can be taken from after a label that was
         // matched with its punctuation stripped.
-        static string tail_after(const string &text, const size_t alnum_count) {
+        static size_t after_alnum(const string &text, const size_t alnum_count) {
             size_t seen = 0;
             for (size_t i = 0; i < text.size(); ++i) {
                 if (!isalnum(static_cast<unsigned char>(text[i]))) continue;
-                if (++seen == alnum_count) return text.substr(i + 1);
+                if (++seen == alnum_count) return i + 1;
             }
-            return {};
-        }
-
-        static bool separator_after_alnum(const string &text, const size_t alnum_count) {
-            size_t seen = 0;
-            for (size_t i = 0; i < text.size(); ++i) {
-                if (!isalnum(static_cast<unsigned char>(text[i]))) continue;
-                if (++seen == alnum_count)
-                    return i + 1 == text.size() || !isalnum(static_cast<unsigned char>(text[i + 1]));
-            }
-            return false;
+            return string::npos;
         }
 
         // Returns the value belonging to a label. Labels are matched on a
@@ -519,13 +527,16 @@ namespace sc {
                         if (after != string::npos && lines[i].text[after] != '/' && lines[i].text[after] != ':') continue;
                     }
 
-                    const string tail = trim(tail_after(lines[i].text, at + key.size()));
-                    if (separator_after_alnum(lines[i].text, at + key.size()) &&
-                        !tail.empty() && !is_caption(keep_alnum(tail)) && !is_label_translation(keep_alnum(tail)))
+                    const auto &text = lines[i].text;
+                    const size_t label_end = after_alnum(text, at + key.size());
+                    const string tail = label_end == string::npos ? string{} : trim(text.substr(label_end));
+                    const bool separated = label_end != string::npos &&
+                                           (label_end == text.size() || !isalnum(static_cast<unsigned char>(text[label_end])));
+                    if (separated && !tail.empty() && !is_caption(keep_alnum(tail)) && !is_label_translation(keep_alnum(tail)))
                         return tail;
 
                     const auto &label = lines[i].box;
-                    const double label_center_y = label.top() + label.height() / 2;
+                    const double label_center_y = label.center().y();
                     const double same_row_tolerance = std::max(4.0, label.height() * 0.5);
                     const double max_horizontal_gap = std::max(label.height() * 4.0, label.width() * 1.5);
                     const double max_vertical_gap = std::max(label.height() * 6.0, label.width() * 1.5);
@@ -535,23 +546,20 @@ namespace sc {
 
                         const auto &candidate = lines[j];
                         const auto &box = candidate.box;
-                        const double horizontal_gap = std::max({
-                            0.0, label.left() - box.right(), box.left() - label.right()
-                        });
-                        if (horizontal_gap > max_horizontal_gap) continue;
+                        const double beside = horizontal_gap(label, box);
+                        if (beside > max_horizontal_gap) continue;
 
-                        const double candidate_center_y = box.top() + box.height() / 2;
-                        const double center_y_gap = std::abs(candidate_center_y - label_center_y);
+                        const double center_y_gap = std::abs(box.center().y() - label_center_y);
                         const bool same_row = box.left() >= label.left() &&
                                               center_y_gap <= same_row_tolerance;
                         double score{};
                         if (same_row) {
-                            score = horizontal_gap + center_y_gap * 2.0;
+                            score = beside + center_y_gap * 2.0;
                         } else {
                             if (box.top() < label.top()) continue;
-                            const double vertical_gap = std::max(0.0, box.top() - label.bottom());
-                            if (vertical_gap > max_vertical_gap) continue;
-                            score = vertical_gap + horizontal_gap * 0.5;
+                            const double below = std::max(0.0, box.top() - label.bottom());
+                            if (below > max_vertical_gap) continue;
+                            score = below + beside * 0.5;
                         }
                         if (score < best_score) {
                             best_score = score;
@@ -853,45 +861,29 @@ namespace sc {
             }
 
             static pair<string, string> nearby_unlabelled_names(const vector<text_line> &lines) {
-                const auto words = [](const string &value) {
-                    size_t count{};
-                    bool in_word = false;
-                    for (const unsigned char c: value) {
-                        if (isalpha(c)) {
-                            if (!in_word) ++count;
-                            in_word = true;
-                        } else {
-                            in_word = false;
-                        }
-                    }
-                    return count;
-                };
                 const text_line *best_surname = nullptr;
                 const text_line *best_names = nullptr;
                 double best_gap = numeric_limits<double>::infinity();
                 for (const auto &surname: lines) {
                     const string surname_text = clean_name(surname.text);
-                    if (surname_text.empty() || words(surname_text) != 1 ||
+                    if (surname_text.empty() || word_count(surname_text) != 1 ||
                         is_caption(surname.alnum) || surname_text.size() < 3)
                         continue;
                     for (const auto &names: lines) {
                         const string names_text = clean_name(names.text);
-                        if (&surname == &names || names_text.empty() || words(names_text) < 2 ||
+                        if (&surname == &names || names_text.empty() || word_count(names_text) < 2 ||
                             is_caption(names.alnum))
                             continue;
 
-                        const double vertical_gap = names.box.top() - surname.box.bottom();
-                        const double horizontal_gap = max({
-                            0.0, surname.box.left() - names.box.right(), names.box.left() - surname.box.right()
-                        });
+                        const double below = names.box.top() - surname.box.bottom();
+                        const double beside = horizontal_gap(surname.box, names.box);
                         const double text_height = max(
                             min(surname.box.width(), surname.box.height()),
                             min(names.box.width(), names.box.height()));
-                        if (vertical_gap < -text_height || vertical_gap > text_height * 4 ||
-                            horizontal_gap > text_height * 2)
+                        if (below < -text_height || below > text_height * 4 || beside > text_height * 2)
                             continue;
 
-                        const double gap = hypot(max(0.0, vertical_gap), horizontal_gap);
+                        const double gap = hypot(max(0.0, below), beside);
                         if (gap >= best_gap) continue;
                         best_gap = gap;
                         best_surname = &surname;
@@ -918,21 +910,17 @@ namespace sc {
                             continue;
 
                         const double height = max(1.0, max(given.box.height(), surname.box.height()));
-                        const double center_y_gap = std::abs((given.box.top() + given.box.height() / 2) -
-                                                             (surname.box.top() + surname.box.height() / 2));
-                        const double horizontal_gap = max({
-                            0.0, given.box.left() - surname.box.right(),
-                            surname.box.left() - given.box.right()
-                        });
+                        const double center_y_gap = std::abs(given.box.center().y() - surname.box.center().y());
+                        const double beside = horizontal_gap(given.box, surname.box);
                         const bool same_row = surname.box.left() >= given.box.left() &&
                                               center_y_gap <= height;
                         const bool next_row = surname.box.top() >= given.box.top() &&
-                                              horizontal_gap <= height * 2;
+                                              beside <= height * 2;
                         if (!same_row && !next_row) continue;
 
                         const double score = same_row
                                                  ? surname.box.left() - given.box.left() + center_y_gap
-                                                 : surname.box.top() - given.box.top() + horizontal_gap;
+                                                 : surname.box.top() - given.box.top() + beside;
                         if (score >= best_score) continue;
                         best_score = score;
                         best_given = &given;
@@ -944,20 +932,6 @@ namespace sc {
             }
 
             static pair<string, string> generic_names(const vector<text_line> &lines) {
-                const auto word_count = [](const string &value) {
-                    size_t count{};
-                    bool in_word = false;
-                    for (const unsigned char c: value) {
-                        if (isalpha(c)) {
-                            if (!in_word) ++count;
-                            in_word = true;
-                        } else {
-                            in_word = false;
-                        }
-                    }
-                    return count;
-                };
-
                 vector<string> candidates;
                 for (const auto &line: lines) {
                     const string name = clean_name(line.text);
@@ -966,7 +940,7 @@ namespace sc {
                     candidates.push_back(name);
                 }
                 if (candidates.size() < 2) return {};
-                const auto names = ranges::find_if(candidates, [&word_count](const string &value) {
+                const auto names = ranges::find_if(candidates, [](const string &value) {
                     return word_count(value) > 1;
                 });
                 if (names == candidates.end()) return {candidates[1], candidates[0]};
@@ -998,9 +972,7 @@ namespace sc {
 
                     const auto &a = names_line->box;
                     const auto &b = candidate.box;
-                    const double horizontal_gap = max({0.0, a.left() - b.right(), b.left() - a.right()});
-                    const double vertical_gap = max({0.0, a.top() - b.bottom(), b.top() - a.bottom()});
-                    const double distance = hypot(horizontal_gap, vertical_gap);
+                    const double distance = hypot(horizontal_gap(a, b), vertical_gap(a, b));
                     const double text_height = max(min(a.width(), a.height()), min(b.width(), b.height()));
                     if (distance > text_height * 3.0 || distance >= best_distance) continue;
 
@@ -1074,9 +1046,9 @@ namespace sc {
                         if (!is_sex(candidate.alnum)) continue;
                         const auto &value = candidate.box;
                         if (value.bottom() < box.top() || value.right() < box.left()) continue; // above or left of it
-                        const double horizontal_gap = max(0.0, value.left() - box.right());
-                        const double vertical_gap = max(0.0, value.top() - box.bottom());
-                        const double distance = hypot(horizontal_gap, vertical_gap);
+                        const double right = max(0.0, value.left() - box.right());
+                        const double below = max(0.0, value.top() - box.bottom());
+                        const double distance = hypot(right, below);
                         if (distance > reach || distance >= nearest_distance) continue;
                         nearest = candidate.alnum;
                         nearest_distance = distance;

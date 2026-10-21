@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <string>
 #include <filesystem>
 #include "face.h"
@@ -17,6 +18,10 @@ namespace sc {
 
         ~facedetector();
 
+        facedetector(facedetector &&) noexcept;
+
+        facedetector &operator=(facedetector &&) noexcept;
+
 
         void set_threshold(double threshold);
 
@@ -32,6 +37,6 @@ namespace sc {
         [[nodiscard]] image annotated() const;
 
     private:
-        impl::face_impl *impl;
+        std::unique_ptr<impl::face_impl> impl;
     };
 } // sc

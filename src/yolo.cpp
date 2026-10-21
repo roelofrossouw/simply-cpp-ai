@@ -4,7 +4,7 @@
 #include "video.h"
 #include <algorithm>
 #include <map>
-#include <memory>
+#include <optional>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <vector>
@@ -44,10 +44,6 @@ namespace sc {
                 return result;
             }
 
-            [[nodiscard]] std::string object_name() const {
-                return (type < 0 || type >= static_cast<int>(kCocoNames.size())) ? "unknown" : kCocoNames[type];
-            }
-
             int type;
             percent confidence;
             rect box;
@@ -65,7 +61,7 @@ namespace sc {
 
             void run(const image &source) {
                 detections.clear();
-                original = std::make_unique<image>(source);
+                original = source;
                 image input{*original};
                 if (const auto model_size = detector.image_size(); model_size.width() > 0 && model_size.height() > 0)
                     input.snap_to_size(0, {model_size});
@@ -88,7 +84,7 @@ namespace sc {
                     const auto box = detection.box * result.size();
                     result.draw(box, stroke{color::Blue, 2});
 
-                    const auto label = detection.object_name() + " (" + detection.confidence + ")";
+                    const auto label = yolo::object_name(detection.type) + " (" + detection.confidence + ")";
                     const auto top = box.top() < 25 ? box.top() + 25 : box.top() - 5;
                     result.draw(text{label, {box.left(), top}, {"sans-serif", 16}}, color::Blue);
                 }
@@ -96,7 +92,7 @@ namespace sc {
             }
 
             onnx detector;
-            std::unique_ptr<image> original;
+            std::optional<image> original;
             std::vector<detection> detections;
 
         private:
@@ -104,12 +100,14 @@ namespace sc {
         };
     }
 
-    yolo::yolo(const std::string &model, const int gpu) : impl(new impl::yolo_impl(model, gpu)) {
+    yolo::yolo(const std::string &model, const int gpu) : impl(std::make_unique<impl::yolo_impl>(model, gpu)) {
     }
 
-    yolo::~yolo() {
-        delete impl;
-    }
+    yolo::~yolo() = default;
+
+    yolo::yolo(yolo &&) noexcept = default;
+
+    yolo &yolo::operator=(yolo &&) noexcept = default;
 
     yolo::operator std::string() const {
         return impl->json().dump();

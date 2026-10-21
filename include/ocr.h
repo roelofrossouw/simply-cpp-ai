@@ -7,6 +7,7 @@
 #include <ostream>
 #include <percent.h>
 #include <rect.h>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,10 @@ namespace sc {
         explicit ocr_detector(const std::string &model = DETECTION_MODEL);
 
         ~ocr_detector();
+
+        ocr_detector(ocr_detector &&) noexcept;
+
+        ocr_detector &operator=(ocr_detector &&) noexcept;
 
         /// Sets the text-map threshold as a percentage from 0 to 100.
         void set_threshold(double threshold);
@@ -51,7 +56,7 @@ namespace sc {
         [[nodiscard]] std::vector<image> text_images(const image &input) const;
 
     private:
-        impl::ocr_detector_impl *impl;
+        std::unique_ptr<impl::ocr_detector_impl> impl;
     };
 
     class ocr_recognizer {
@@ -64,6 +69,10 @@ namespace sc {
         explicit ocr_recognizer(const std::string &model = RECOGNITION_MODEL, const std::filesystem::path &dictionary = {});
 
         ~ocr_recognizer();
+
+        ocr_recognizer(ocr_recognizer &&) noexcept;
+
+        ocr_recognizer &operator=(ocr_recognizer &&) noexcept;
 
         /// Sets the minimum recognition confidence, as a percentage from 0 to 100, for batch results.
         void set_threshold(double threshold);
@@ -79,7 +88,7 @@ namespace sc {
         [[nodiscard]] std::vector<result> recognize(const std::vector<image> &inputs, double stretch) const;
 
     private:
-        impl::ocr_recognizer_impl *impl;
+        std::unique_ptr<impl::ocr_recognizer_impl> impl;
     };
 
     class ocr {
@@ -95,6 +104,10 @@ namespace sc {
                      const std::filesystem::path &dictionary = {});
 
         ~ocr();
+
+        ocr(ocr &&) noexcept;
+
+        ocr &operator=(ocr &&) noexcept;
 
         operator std::string() const;
 
@@ -139,6 +152,6 @@ namespace sc {
         [[nodiscard]] nlohmann::ordered_json to_json() const;
 
     private:
-        impl::ocr_impl *impl;
+        std::unique_ptr<impl::ocr_impl> impl;
     };
 } // namespace sc
