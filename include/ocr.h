@@ -40,10 +40,8 @@ namespace sc {
         /// Sets DBSCAN's maximum height distance in detector-map pixels.
         void set_maximum_height_difference(double maximum_height_difference);
 
-        /// Detects and orders text regions in the source image.
+        /// Detects text regions in the source image, in reading order.
         [[nodiscard]] std::vector<rotated_rect> detect(const std::filesystem::path &image_path) const;
-
-        /// Detects and orders text regions in the source image.
         [[nodiscard]] std::vector<rotated_rect> detect(const image &input) const;
 
         /// Crops and deskews detected text regions from the source image.
@@ -51,8 +49,6 @@ namespace sc {
 
         /// Detects, crops, and deskews text regions from the source image.
         [[nodiscard]] std::vector<image> text_images(const std::filesystem::path &image_path) const;
-
-        /// Detects, crops, and deskews text regions from the source image.
         [[nodiscard]] std::vector<image> text_images(const image &input) const;
 
     private:
@@ -124,10 +120,9 @@ namespace sc {
         /// Sets DBSCAN's maximum height distance in detector-map pixels.
         void set_maximum_height_difference(double maximum_height_difference);
 
-        /// Recognises each region upright and upside down, retaining results at or above this confidence percentage.
+        /// Reads the image's text, keeping the lines read with at least minimum_confidence (a
+        /// percentage; std::invalid_argument outside 0 to 100, or for an empty image).
         void detect(const std::filesystem::path &image_path, double minimum_confidence = 85) const;
-
-        /// Recognises each region upright and upside down, retaining results at or above this confidence percentage.
         void detect(const image &input, double minimum_confidence = 85) const;
 
         /// Whether detect() first turns the image upright with the document orientation
@@ -146,7 +141,6 @@ namespace sc {
         [[nodiscard]] std::string text() const;
 
         /// The lines found, each boxed, on a copy of the image read last: to save or draw on.
-
         [[nodiscard]] image annotated() const;
 
         [[nodiscard]] nlohmann::ordered_json to_json() const;

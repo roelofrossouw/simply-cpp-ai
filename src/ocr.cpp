@@ -179,11 +179,6 @@ namespace sc {
                 };
             }
 
-            // A region's direction is taken from its longer side, but a lone letter or a short word
-            // can be as tall as it is wide or taller (F, 7), so its longer side may run across the
-            // text: it was then dropped as noise among the page's lines, or read sideways. Short
-            // regions are turned to run the way the page's text does: the median direction of its
-            // clearly long regions (or level, without any). Their width can then be the shorter side.
             // The page's text direction, 0 to 180 degrees: the most common direction of its clearly
             // long regions (or level, without any) - a few sideways lines along an edge don't pull
             // it over. Directions repeat every 180 degrees, so 179 and 1 count as neighbours.
@@ -209,6 +204,11 @@ namespace sc {
                 return normalized_angle(degrees(std::atan2(y, x) / 2));
             }
 
+            // A region's direction is taken from its longer side, but a lone letter or a short word
+            // can be as tall as it is wide or taller (F, 7), so its longer side may run across the
+            // text: it was then dropped as noise among the page's lines, or read sideways. Short
+            // regions are turned to run the way the page's text does (text_direction()). Their
+            // width can then be the shorter side.
             std::vector<rotated_rect> along_text_direction(std::vector<rotated_rect> regions) {
                 const double direction = text_direction(regions);
                 for (auto &region: regions) {
@@ -583,7 +583,7 @@ namespace sc {
                 try {
                     line_classifier = std::make_unique<onnx>(LineOrientationModel, false);
                 } catch (const std::exception &) {
-                    // Not installed (an older simply-cpp-models): every line is read both ways.
+                    // An optional model: without it every line is read both ways.
                 }
             }
 
@@ -908,7 +908,7 @@ namespace sc {
             try {
                 return std::make_unique<onnx>("paddle_rotate.onnx", false);
             } catch (const std::exception &) {
-                return nullptr; // not installed (an older simply-cpp-models): taken as upright
+                return nullptr; // an optional model: without it, taken as upright
             }
         }();
         if (!classifier || input.empty()) return 0;

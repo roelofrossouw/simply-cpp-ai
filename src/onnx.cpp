@@ -73,7 +73,6 @@ namespace sc {
                 }
 
 #ifdef __APPLE__
-                // Add CoreML provider
                 if (use_metal) {
                     Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
                 }
@@ -207,7 +206,6 @@ namespace sc {
                 auto &shape = outputs.front().second;
                 if (shape.size() != 3) return 0;
                 if (shape[2] != 6) return 0;
-                // Theoretically batch size could be more...
                 if (shape[0] != 1) return 0;
                 return static_cast<int>(shape[1]);
             }
@@ -218,7 +216,6 @@ namespace sc {
                 if (input_shape.size() != 4) return {};
                 // Only handle batches of 1 for now; a dynamic batch (-1) takes 1 too.
                 if (input_shape[0] != 1 && input_shape[0] != -1) return {};
-                // Only handling RGB
                 if (input_shape[1] != 3) return {};
                 // NCHW: the shape is [batch, channels, height, width], and a size is width first.
                 return {static_cast<int>(input_shape[3]), static_cast<int>(input_shape[2])};

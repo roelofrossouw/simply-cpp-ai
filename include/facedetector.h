@@ -22,7 +22,6 @@ namespace sc {
 
         facedetector &operator=(facedetector &&) noexcept;
 
-
         void set_threshold(double threshold);
 
         void set_max_faces(int max_faces);
@@ -33,7 +32,6 @@ namespace sc {
         [[nodiscard]] std::vector<face> detect(const image &input, bool include_face_images = true) const;
 
         /// The faces found, boxed with their landmarks, on a copy of the image read last: to save or draw on.
-
         [[nodiscard]] image annotated() const;
 
     private:
