@@ -1,15 +1,14 @@
 // Reads identity documents (sc::identity: the document's text, its ID or passport number, names and
-// faces) from an image, or every image in a folder, and stores each face's embedding in
-// truckassist.id_embedding with the document's details.
+// faces) from an image, or every image in a folder, stores each face's embedding in
+// truckassist.id_embedding with the document's details, and moves each file read to a done folder.
 
 #include <sc.h>
 
 #include "identity.h"
+#include "processed_files.h"
 #include <params.h>
 #include <pgsql.h>
 
-#include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -25,34 +24,22 @@ namespace {
           returning id
 )"
     };
-
-    bool is_image(const filesystem::path &file) {
-        string extension = file.extension().string();
-        ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(tolower(c)); });
-        return extension == ".jpg" || extension == ".jpeg" || extension == ".png" || extension == ".tif" || extension == ".tiff" ||
-               extension == ".bmp" || extension == ".webp";
-    }
-
-    // The images to read: input itself when it's a file, else the images in the folder, by name.
-    vector<filesystem::path> images_in(const filesystem::path &input) {
-        if (filesystem::is_regular_file(input)) return {input};
-        if (!filesystem::is_directory(input)) throw runtime_error{input.string() + " is neither an image nor a folder"};
-        vector<filesystem::path> images;
-        for (const auto &entry: filesystem::directory_iterator(input))
-            if (entry.is_regular_file() && is_image(entry.path())) images.push_back(entry.path());
-        ranges::sort(images);
-        return images;
-    }
 }
 
 int main(int argc, char **argv) {
     const sc::params args{argc, argv, {
         {"name", "process-id"},
         {"description", "Reads identity documents (the ID or passport number, names and faces) from an image, or every "
-                        "image in a folder (JPEG, PNG, TIFF, BMP or WebP), and stores each face's embedding in "
-                        "truckassist.id_embedding. The database settings left out come from libpq's environment: "
+                        "image in a folder (JPEG, PNG, TIFF, BMP or WebP; --recursive: in its folders too), stores each "
+                        "face's embedding in truckassist.id_embedding, and moves each file it read into the done folder "
+                        "(made when needed), so a second run doesn't read it again. A recursive scan skips every folder "
+                        "named like the done folder. The database settings left out come from libpq's environment: "
                         "PGHOST and PGPORT, PGDATABASE, PGUSER, and PGPASSWORD or ~/.pgpass."},
         {"options", {
+            {"recursive", {{"short", "r"}, {"type", "boolean"}, {"help", "with a folder, the images in its folders too"}}},
+            {"done", {{"short", "D"}, {"value", "PATH"}, {"default", "done"},
+                      {"help", "where files go once read, keeping their subfolders; a relative path is under the input's "
+                               "folder"}}},
             {"server", {{"short", "s"}, {"value", "HOST[:PORT]"},
                         {"help", "the database server, or several for failover: \"db1;db2:5433\" (default: PGHOST, PGPORT)"}}},
             {"database", {{"short", "d"}, {"value", "NAME"}, {"help", "the database (default: PGDATABASE)"}}},
@@ -65,7 +52,8 @@ int main(int argc, char **argv) {
 
     try {
         const string input = args.as<string>("input", ".");
-        const auto images = images_in(input);
+        const auto done = processed_files::done_folder(input, args.as<string>("done"));
+        const auto images = processed_files::images_in(input, done, args.as<bool>("recursive"));
         if (images.empty()) {
             cerr << "process-id: no images in " << input << '\n';
             return 1;
@@ -79,6 +67,7 @@ int main(int argc, char **argv) {
             if (!id.has_id_number()) {
                 cerr << "Could not find the ID " << file.filename() << endl;
                 cerr << "Info: " << id.all_text() << endl;
+                processed_files::move_to_done(file, input, done); // read, so done all the same
                 continue;
             }
             cout << sw
@@ -108,6 +97,8 @@ int main(int argc, char **argv) {
                 cout << sw << " DB " << db_result[0]["id"] << endl;
                 sw.reset();
             }
+            // Only once every face is stored: a file whose insert failed stays, for the next run.
+            processed_files::move_to_done(file, input, done);
         }
     } catch (const exception &error) {
         cerr << "process-id: " << error.what() << '\n';
