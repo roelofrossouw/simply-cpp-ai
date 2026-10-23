@@ -90,7 +90,7 @@ namespace sc {
         [[nodiscard]] percent ocr_confidence() const;
 
         /// Face embeddings detected in the source image when face detection
-        /// was requested. Images are not retained with the embeddings.
+        /// was requested, each with its face's image (face_image(): aligned, 112 x 112).
         [[nodiscard]] const std::vector<face> &faces() const noexcept;
 
         /// Rotation in degrees applied before OCR, as image::rotate: 0, 90, 180 or 270.
