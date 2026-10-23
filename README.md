@@ -18,9 +18,12 @@ brew install simply-cpp simply-cpp-image simply-cpp-ai
 ### apt (Ubuntu)
 
 ```bash
-curl -fsSL https://apt.roelof.co.za/setup.sh | bash # registers the apt repo - same command as the brew one above
+curl -fsSL https://apt.roelof.co.za/setup.sh | bash -s -- --cuda # the apt repo, and NVIDIA's for CUDA
 sudo apt -y install simply-cpp-dev simply-cpp-image-dev simply-cpp-ai-dev
 ```
+
+ONNX Runtime comes as its GPU build (`simply-cpp-onnxruntime`), so `--cuda` also adds NVIDIA's
+CUDA repository for the running Ubuntu release; the machine needs an NVIDIA driver too.
 
 
 ## Model licences
