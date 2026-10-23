@@ -644,7 +644,7 @@ namespace sc {
 
                 if (face_detection) {
                     static thread_local facedetector detector;
-                    best.faces_ = detector.detect(input, false);
+                    best.faces_ = detector.detect(input, true); // with each face's image (aligned, 112 x 112)
                 }
 
                 // Read it the way up the orientation model says. Only when that misses fields, try
