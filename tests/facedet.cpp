@@ -12,6 +12,49 @@ namespace {
 
 int main() {
     sc::timer sw;
+    // boxes(): where the faces are in the image's own pixels. A photo with a face (the COCO samples), and a copy
+    // of half its size: the boxes come out half as big, at half the place, whatever the detector's letterbox.
+    {
+        sc::facedetector boxed;
+        int checked = 0;
+        for (const auto &file: fs::directory_iterator("resource/val2017")) {
+            if (file.path().extension() != ".jpg") continue;
+            const sc::image photo{file.path().string()};
+            const auto faces = boxed.detect(photo, false);
+            const auto boxes = boxed.boxes();
+            if (boxes.size() != faces.size()) {
+                cout << "FAILED: " << boxes.size() << " boxes for " << faces.size() << " faces in " << file.path() << endl;
+                return 1;
+            }
+            if (faces.empty()) continue;
+            const auto size = photo.size();
+            const auto &box = boxes.front();
+            if (box.left() < -box.width() / 2 || box.top() < -box.height() / 2 || box.right() > size.width() + box.width() / 2 ||
+                box.bottom() > size.height() + box.height() / 2 || box.height() <= 0) {
+                cout << "FAILED: a box outside its image: " << box.left() << "," << box.top() << " " << box.width() << "x" << box.height() << endl;
+                return 1;
+            }
+            sc::image half{photo};
+            half.resize_to({size.width() / 2, 0});
+            const auto half_faces = boxed.detect(half, false);
+            const auto half_boxes = boxed.boxes();
+            if (half_faces.empty()) continue; // too small to find at half the size
+            const double ratio = half_boxes.front().height() / box.height();
+            const double moved = half_boxes.front().left() / std::max(1.0, box.left());
+            cout << file.path().filename().string() << ": face " << box.width() << "x" << box.height() << " at " << box.left() << ","
+                 << box.top() << "; half: x" << ratio << endl;
+            if (ratio < 0.4 || ratio > 0.6 || (box.left() > 20 && (moved < 0.4 || moved > 0.6))) {
+                cout << "FAILED: the half-size copy's box isn't half as big (" << ratio << ") or at half the place (" << moved << ")" << endl;
+                return 1;
+            }
+            if (++checked == 3) break;
+        }
+        cout << checked << " photos' boxes checked" << endl;
+        if (checked == 0) {
+            cout << "FAILED: no face found in resource/val2017 to check boxes() with" << endl;
+            return 1;
+        }
+    }
     int counter{MaxFiles};
     sc::facedetector fd;
     fd.set_threshold(MinFaceScore);

@@ -34,6 +34,11 @@ namespace sc {
         /// The faces found, boxed with their landmarks, on a copy of the image read last: to save or draw on.
         [[nodiscard]] image annotated() const;
 
+        /// Where the faces the last detect() found are, in its image's own pixels (not the detector's
+        /// letterboxed copy), in the order detect() gave them: e.g. to tell a portrait from a face
+        /// far away by its height. None before a detect().
+        [[nodiscard]] std::vector<rect> boxes() const;
+
     private:
         std::unique_ptr<impl::face_impl> impl;
     };

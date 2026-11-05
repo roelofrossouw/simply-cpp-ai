@@ -165,6 +165,11 @@ namespace sc {
                 original = source;
                 image input{*original};
                 input.snap_to_size(stride, valid_sizes);
+                // How the letterboxed copy maps back onto the image (boxes())
+                const auto from = original->size(), to = input.size();
+                padding_ = input.padding();
+                scale_ = std::min(static_cast<double>(to.width() - 2 * padding_.width()) / from.width(),
+                                  static_cast<double>(to.height() - 2 * padding_.height()) / from.height());
                 auto out = detector.process_image(input);
                 vector<const float *> result;
                 for (const auto &o: out) result.push_back(o.data);
@@ -179,10 +184,23 @@ namespace sc {
                 return result;
             }
 
+            [[nodiscard]] vector<rect> boxes() const {
+                vector<rect> out;
+                if (scale_ <= 0) return out;
+                for (const auto &detection: detections) {
+                    const auto &box = detection.box;
+                    out.emplace_back((box.left() - padding_.width()) / scale_, (box.top() - padding_.height()) / scale_,
+                                     box.width() / scale_, box.height() / scale_);
+                }
+                return out;
+            }
+
             onnx detector;
             onnx extractor;
             vector<detection> detections;
             optional<image> original;
+            size_i padding_{0, 0};
+            double scale_ = 0;
 
         private:
             float threshold_{0.6f};
@@ -217,5 +235,9 @@ namespace sc {
 
     image facedetector::annotated() const {
         return impl->annotated();
+    }
+
+    vector<rect> facedetector::boxes() const {
+        return impl->boxes();
     }
 } // namespace sc
