@@ -29,6 +29,8 @@ int main() {
             if (faces.empty()) continue;
             const auto size = photo.size();
             const auto &box = boxes.front();
+            // Big enough to be found again at half the size (a face of 20 px or less may not be, and another is then)
+            if (box.height() < 40) continue;
             if (box.left() < -box.width() / 2 || box.top() < -box.height() / 2 || box.right() > size.width() + box.width() / 2 ||
                 box.bottom() > size.height() + box.height() / 2 || box.height() <= 0) {
                 cout << "FAILED: a box outside its image: " << box.left() << "," << box.top() << " " << box.width() << "x" << box.height() << endl;
@@ -39,15 +41,27 @@ int main() {
             const auto half_faces = boxed.detect(half, false);
             const auto half_boxes = boxed.boxes();
             if (half_faces.empty()) continue; // too small to find at half the size
-            const double ratio = half_boxes.front().height() / box.height();
-            const double moved = half_boxes.front().left() / std::max(1.0, box.left());
+            // The same face in the copy: the box whose centre, doubled, is nearest this one's (with several people the
+            // detector may give them in another order at another size)
+            const auto centre = [](const sc::rect &r) { return std::pair{r.left() + r.width() / 2, r.top() + r.height() / 2}; };
+            const auto [cx, cy] = centre(box);
+            const sc::rect *same = nullptr;
+            double nearest = 1e18;
+            for (const auto &each: half_boxes) {
+                const auto [hx, hy] = centre(each);
+                const double distance = (2 * hx - cx) * (2 * hx - cx) + (2 * hy - cy) * (2 * hy - cy);
+                if (distance < nearest) nearest = distance, same = &each;
+            }
+            if (nearest > box.height() * box.height()) continue; // not found again: the nearest is someone else
+            const double ratio = same->height() / box.height();
+            const double moved = same->left() / std::max(1.0, box.left());
             cout << file.path().filename().string() << ": face " << box.width() << "x" << box.height() << " at " << box.left() << ","
                  << box.top() << "; half: x" << ratio << endl;
             if (ratio < 0.4 || ratio > 0.6 || (box.left() > 20 && (moved < 0.4 || moved > 0.6))) {
                 cout << "FAILED: the half-size copy's box isn't half as big (" << ratio << ") or at half the place (" << moved << ")" << endl;
                 return 1;
             }
-            if (++checked == 3) break;
+            ++checked;
         }
         cout << checked << " photos' boxes checked" << endl;
         if (checked == 0) {
