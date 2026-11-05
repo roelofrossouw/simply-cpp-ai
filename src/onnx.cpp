@@ -89,8 +89,15 @@ namespace sc {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
                     }
                 } else if (cuda) {
-                    std::cerr << "CUDA execution provider found, but libcublasLt is unavailable; "
-                            "using the default provider\n(Consider installing cuda-toolkit-13-4 to enable GPU usage)";
+                    // Only where there's a GPU to use (a machine without one runs on the CPU as it should),
+                    // and once a process rather than for every model it loads.
+                    static const bool told = [] {
+                        if (cuda_devices() > 0)
+                            std::cerr << "CUDA execution provider found, but libcublasLt is unavailable; using the default "
+                                         "provider (consider installing cuda-toolkit-13-4 to enable GPU usage)\n";
+                        return true;
+                    }();
+                    (void) told;
                 }
                 options.SetIntraOpNumThreads(4);
                 options.SetInterOpNumThreads(1);
