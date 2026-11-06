@@ -1,6 +1,7 @@
 #include "face.h"
 
 #include <sc_test.h>
+#include <base64.h>
 #include <chrono>
 #include <filesystem>
 #include <limits>
@@ -52,6 +53,11 @@ int main() {
         CHECK(with_image.face_image() != nullptr);
         CHECK_EQ(with_image.face_image()->size(), image.size());
         CHECK(!sc::face::from_json(with_image.to_json()).has_image());
+        auto sent = with_image.to_json();
+        sent["image"] = sc::base64::encode(image.encoded("png"));
+        const auto received = sc::face::from_json(sent);
+        CHECK(received.has_image());
+        CHECK_EQ(received.face_image()->size(), image.size());
     }
 
     SECTION("Invalid features");

@@ -112,6 +112,11 @@ namespace sc {
         [[nodiscard]] std::optional<bool> citizen() const;
 
         [[nodiscard]] nlohmann::ordered_json to_json() const;
+        /// An identity as another program read it, from to_json()'s form: so a document read elsewhere
+        /// (a service with the models) is used as if read here. Optional extras to_json() leaves out:
+        /// "text", the lines read (all_text()), and each face's "image" (face::from_json()). Throws
+        /// std::invalid_argument for another version or a malformed face.
+        [[nodiscard]] static identity from_json(const nlohmann::ordered_json &json);
         operator nlohmann::ordered_json() const;
         operator std::string() const;
         friend std::ostream &operator<<(std::ostream &lhs, const identity &rhs);

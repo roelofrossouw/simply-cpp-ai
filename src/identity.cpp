@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -1165,6 +1166,44 @@ namespace sc {
             for (const auto &detected_face: faces_) result["faces"].push_back(detected_face.to_json());
         }
         result["rotation"] = rotation_;
+        return result;
+    }
+
+    identity identity::from_json(const nlohmann::ordered_json &json) {
+        if (!json.is_object() || json.value("version", 0) != 1)
+            throw invalid_argument{"Unsupported identity JSON format"};
+        identity result;
+        const auto text = [&json](const char *key) { return json.contains(key) && json[key].is_string() ? json[key].get<string>() : string{}; };
+        const auto type = text("document_type");
+        result.document_ = type == "id_card" ? document::id_card : type == "id_book" ? document::id_book
+                           : type == "passport" ? document::passport : document::unknown;
+        result.id_number_ = text("id_number");
+        if (json.contains("verification") && json["verification"].is_object()) {
+            const auto &checks = json["verification"];
+            result.checks_.luhn = checks.value("luhn", false);
+            result.checks_.date_of_birth = checks.value("date_of_birth", false);
+            result.checks_.sex = checks.value("sex", false);
+            result.checks_.mrz = checks.value("mrz", false);
+        }
+        result.ocr_confidence_ = json.value("ocr_confidence", 0.0);
+        result.rotation_ = json.value("rotation", 0);
+        result.surname_ = text("surname");
+        result.names_ = text("names");
+        result.date_of_birth_ = text("date_of_birth");
+        result.sex_ = text("sex");
+        result.nationality_ = text("nationality");
+        result.country_of_birth_ = text("country_of_birth");
+        result.status_ = text("status");
+        result.passport_number_ = text("passport_number");
+        result.date_of_issue_ = text("date_of_issue");
+        result.date_of_expiry_ = text("date_of_expiry");
+        if (json.contains("faces") && json["faces"].is_array()) {
+            result.face_detection_performed_ = true;
+            for (const auto &each: json["faces"]) result.faces_.push_back(face::from_json(each));
+        }
+        // all_text() gives each line with a newline after it
+        for (const auto lines = text("text"); const auto line: views::split(lines, '\n'))
+            if (!ranges::empty(line)) result.raw_text_.emplace_back(ranges::begin(line), ranges::end(line));
         return result;
     }
 

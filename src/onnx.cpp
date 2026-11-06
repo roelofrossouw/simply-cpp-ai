@@ -1,6 +1,7 @@
 #include "onnx.h"
 #include "image.h"
 #include <algorithm>
+#include <atomic>
 #include <stdexcept>
 #include <string>
 #include <iostream>
@@ -84,6 +85,11 @@ namespace sc {
                     try {
                         OrtCUDAProviderOptions cuda_options{};
                         cuda_options.device_id = gpu;
+                        // The GPU's arena grows by what's asked for, not doubling, and at most to
+                        // onnx::gpu_memory_limit() (0: no limit), so a large input can't take a card
+                        // shared with other programs.
+                        cuda_options.arena_extend_strategy = 1; // kSameAsRequested
+                        cuda_options.gpu_mem_limit = onnx::gpu_memory_limit();
                         options.AppendExecutionProvider_CUDA(cuda_options);
                     } catch (const Ort::Exception &error) {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
@@ -252,6 +258,17 @@ namespace sc {
             fs::path model_filename;
         };
     }
+
+    // Not a static in an unnamed namespace: a module that embeds sc-ai (sc-doc-classifier) has its own
+    // copy of this code, and the process must see one limit whichever copy runs.
+    std::atomic<std::size_t> &onnx::gpu_memory_limit_setting() {
+        static std::atomic<std::size_t> bytes{0};
+        return bytes;
+    }
+
+    void onnx::gpu_memory_limit(const std::size_t bytes) { gpu_memory_limit_setting() = bytes; }
+
+    std::size_t onnx::gpu_memory_limit() { return gpu_memory_limit_setting(); }
 
     onnx::onnx(const std::string &model, const bool use_metal, const int gpu) : impl(std::make_unique<impl::onnx_impl>(model, use_metal, gpu)) {
     }

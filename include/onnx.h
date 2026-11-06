@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -91,7 +93,15 @@ namespace sc {
         /// The CUDA devices models can run on: 0 without CUDA (always on Apple platforms).
         [[nodiscard]] static int gpus();
 
+        /// The most GPU memory, in bytes, each model loaded after this call may take for its work
+        /// (ONNX Runtime's CUDA arena; the model's weights come on top); 0, the default: no limit.
+        /// For a program sharing its GPU with others. A run that needs more fails with an exception.
+        static void gpu_memory_limit(std::size_t bytes);
+        [[nodiscard]] static std::size_t gpu_memory_limit();
+
     private:
+        static std::atomic<std::size_t> &gpu_memory_limit_setting();
+
         std::unique_ptr<impl::onnx_impl> impl;
     };
 } // sc

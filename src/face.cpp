@@ -1,5 +1,7 @@
 #include "face.h"
 
+#include <base64.h>
+
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -59,6 +61,10 @@ namespace sc {
                 throw std::invalid_argument{"Face features must be numeric"};
             features[i] = json["features"][i].get<float>();
         }
+        // The face's picture, when one came along: base64 PNG under "image" (what a program sending
+        // faces to another adds; to_json() leaves it out).
+        if (json.contains("image") && json["image"].is_string() && !json["image"].get<std::string>().empty())
+            return face{features, image{base64::decode(json["image"].get<std::string>())}};
         return face{features};
     }
 

@@ -1,5 +1,7 @@
 #include "identity.h"
 #include <sc_test.h>
+#include <base64.h>
+#include <opencv.h>
 
 #include <filesystem>
 #include <fstream>
@@ -69,6 +71,32 @@ int main() {
         CHECK(!passport.date_of_expiry().empty());
         CHECK_EQ(passport.date_of_birth(), sc::identity::id_date_of_birth(passport.id_number()));
         CHECK_EQ(passport.sex(), sc::identity::id_sex(passport.id_number()));
+    }
+
+    SECTION("An identity read elsewhere, from JSON");
+    {
+        // As a service sends it: to_json() with the lines read and each face's picture as base64 PNG
+        sc::identity card{std::filesystem::path{"resource/samples/card.jpg"}, true};
+        auto sent = card.to_json();
+        sent["text"] = card.all_text();
+        for (size_t i = 0; i < card.faces().size(); ++i)
+            if (const auto *picture = card.faces()[i].face_image())
+                sent["faces"][i]["image"] = sc::base64::encode(picture->encoded("png"));
+        auto read = sc::identity::from_json(sent);
+        CHECK_EQ(read.id_number(), card.id_number());
+        CHECK(read.document_type() == card.document_type());
+        CHECK_EQ(read.names(), card.names());
+        CHECK_EQ(read.surname(), card.surname());
+        CHECK_EQ(static_cast<double>(read.confidence()), static_cast<double>(card.confidence()));
+        CHECK_EQ(read.rotation(), card.rotation());
+        CHECK_EQ(read.all_text(), card.all_text());
+        CHECK_EQ(read.faces().size(), card.faces().size());
+        for (size_t i = 0; i < read.faces().size() && i < card.faces().size(); ++i) {
+            CHECK(read.faces()[i].has_image());
+            CHECK_BETWEEN(static_cast<double>(read.faces()[i] ^ card.faces()[i]), 99.9, 100.1);
+        }
+        CHECK_EQ(read.to_json().dump(), card.to_json().dump());
+        CHECK_THROWS_AS(sc::identity::from_json(nlohmann::ordered_json{{"version", 2}}), invalid_argument);
     }
 
     TEST_SUMMARY();

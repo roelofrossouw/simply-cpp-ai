@@ -26,6 +26,8 @@ namespace sc {
         [[nodiscard]] percent operator^(const face &rhs) const;
 
         [[nodiscard]] nlohmann::ordered_json to_json() const;
+        /// A face from to_json()'s form. With "image" (the face's picture as base64 PNG, which to_json()
+        /// leaves out) it has its picture too.
         [[nodiscard]] static face from_json(const nlohmann::ordered_json &json);
         void save(const std::filesystem::path &path) const;
         [[nodiscard]] static face load(const std::filesystem::path &path);
