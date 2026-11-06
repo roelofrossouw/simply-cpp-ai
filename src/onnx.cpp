@@ -90,6 +90,11 @@ namespace sc {
                         // shared with other programs.
                         cuda_options.arena_extend_strategy = 1; // kSameAsRequested
                         cuda_options.gpu_mem_limit = onnx::gpu_memory_limit();
+                        // With a limit, each run gives back what it no longer uses: the arena otherwise
+                        // keeps chunks sized to earlier inputs, and a later, larger one no longer fits
+                        // (a page after a card cut out of it, at 2 GB a model).
+                        if (cuda_options.gpu_mem_limit > 0)
+                            run_options.AddConfigEntry("memory.enable_memory_arena_shrinkage", ("gpu:" + std::to_string(gpu)).c_str());
                         options.AppendExecutionProvider_CUDA(cuda_options);
                     } catch (const Ort::Exception &error) {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
@@ -247,7 +252,7 @@ namespace sc {
             Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "simply-cpp-onnx"};
 #endif
             Ort::SessionOptions options;
-            Ort::RunOptions run_options{nullptr};
+            Ort::RunOptions run_options;
             std::unique_ptr<Ort::Session> session;
             std::vector<val> results;
 
