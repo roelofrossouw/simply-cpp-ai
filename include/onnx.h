@@ -70,6 +70,10 @@ namespace sc {
         /// The same, with each image given to the model as (pixel - mean) * scale.
         std::vector<output> process_images(const std::vector<image> &images, double scale, double mean) const;
 
+        /// The same, padded to at least width: a long list read a few at a time, each as if in one batch
+        /// as wide as the widest of all (a model can read an image differently with more padding).
+        std::vector<output> process_images(const std::vector<image> &images, double scale, double mean, int width) const;
+
         [[nodiscard]] int yolo26_size() const;
 
         // The input image size, width by height, for a model taking one RGB image ([1, 3, height,

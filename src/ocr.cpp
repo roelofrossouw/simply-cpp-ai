@@ -28,6 +28,8 @@ namespace sc {
             // MaximumDetectionSide pixels on the longer side - PaddleOCR limits its own the same way
             // (det_limit_side_len) - which also keeps detection on large photos quick.
             constexpr int MaximumDetectionSide = 1280;
+            // Text lines recognised in one run (PaddleOCR's rec_batch_num is 6).
+            constexpr size_t RecognitionBatch = 8;
             constexpr double MaximumTextHeight = 14;
             constexpr double TypicalTextHeight = 11;
             constexpr double MinimumTextHeight = 6;
@@ -484,16 +486,25 @@ namespace sc {
                     text_image.resize_to({0, 48});
                     if (stretch != 1) text_image.resize_to({static_cast<int>(std::lround(text_image.size().width() * stretch)), 48});
                 }
-                const auto outputs = recognizer.process_images(resized, RecognitionScale, RecognitionMean);
-                if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
-                    outputs.front().shape[0] != static_cast<int64_t>(resized.size()))
-                    throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
-
+                // Read RecognitionBatch lines at a time: one batch of a page's hundreds of lines took gigabytes.
+                // Each is still padded to the widest line, as in one batch: with less padding the model reads some
+                // lines differently (sorted by width, names were read right less often).
+                int widest = 0;
+                for (const auto &line: resized) widest = std::max(widest, line.size().width());
                 std::vector<ocr_recognizer::result> result;
                 result.reserve(resized.size());
-                for (size_t i = 0; i < resized.size(); ++i) {
-                    auto recognized = decode(outputs, i);
-                    if (recognized.confidence >= threshold_) result.push_back(std::move(recognized));
+                for (size_t first = 0; first < resized.size(); first += RecognitionBatch) {
+                    const size_t count = std::min(RecognitionBatch, resized.size() - first);
+                    const std::vector<image> batch(std::make_move_iterator(resized.begin() + static_cast<std::ptrdiff_t>(first)),
+                                                   std::make_move_iterator(resized.begin() + static_cast<std::ptrdiff_t>(first + count)));
+                    const auto outputs = recognizer.process_images(batch, RecognitionScale, RecognitionMean, widest);
+                    if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
+                        outputs.front().shape[0] != static_cast<int64_t>(count))
+                        throw std::runtime_error{"PaddleOCR recognition model returned an invalid batch"};
+                    for (size_t k = 0; k < count; ++k) {
+                        auto recognized = decode(outputs, k);
+                        if (recognized.confidence >= threshold_) result.push_back(std::move(recognized));
+                    }
                 }
                 return result;
             }

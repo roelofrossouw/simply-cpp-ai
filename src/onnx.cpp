@@ -103,6 +103,11 @@ namespace sc {
                 options.SetInterOpNumThreads(1);
 #endif
                 options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+                // No CPU memory arena: it grows to the largest input a session has seen, doubling its chunks
+                // (64, 128 ... 1024 MB), and never gives memory back. One A4 page read by sc::identity
+                // left 3.8 GB behind, more with every page and every other OCR (2026-11-06, process-id
+                // OOM-killed in a 4 GiB container); without it 0.6 GB stays, and a page peaks at 1.7 GB.
+                options.DisableCpuMemArena();
 
 #ifndef NDEBUG
                 sc::timer sw;
@@ -137,7 +142,8 @@ namespace sc {
                 return data;
             }
 
-            std::vector<output> run_images(const std::vector<image> &images, const double scale, const double mean) {
+            std::vector<output> run_images(const std::vector<image> &images, const double scale, const double mean,
+                                           const int minimum_width = 0) {
                 if (images.empty()) return {};
                 if (inputs.size() != 1 || inputs.front().second.size() != 4 ||
                     inputs.front().second[1] != 3)
@@ -149,7 +155,7 @@ namespace sc {
                     throw std::invalid_argument{"Image batch size does not match the model's fixed batch dimension"};
 
                 int height = model_shape[2] > 0 ? static_cast<int>(model_shape[2]) : 0;
-                int width = model_shape[3] > 0 ? static_cast<int>(model_shape[3]) : 0;
+                int width = model_shape[3] > 0 ? static_cast<int>(model_shape[3]) : minimum_width;
                 for (const auto &img: images) {
                     if (img.empty()) throw std::invalid_argument{"Image batch cannot contain empty images"};
                     img.generate_blob(scale, mean, true);
@@ -275,6 +281,11 @@ namespace sc {
     std::vector<output> onnx::process_images(const std::vector<image> &images, const double scale,
                                              const double mean) const {
         return impl->run_images(images, scale, mean);
+    }
+
+    std::vector<output> onnx::process_images(const std::vector<image> &images, const double scale, const double mean,
+                                             const int width) const {
+        return impl->run_images(images, scale, mean, width);
     }
 
     int onnx::yolo26_size() const {
