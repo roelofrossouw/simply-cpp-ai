@@ -52,7 +52,7 @@ add_sc_object(face
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
-# sc::identity (South African identity documents) moved to sc-doc-classifier as sc::doc::identity.
+# sc::identity (South African identity documents) moved to sc-doc-classifier as sc::doc_classifier::identity.
 
 
 ######################
@@ -83,11 +83,6 @@ add_sc_example(sc-ai-ocr)
 # Binaries #
 ############
 # process-id is an app of its own since 2.4.0 (apps/process-id: it reads PDFs with sc-mupdf, AGPL).
-# load-faces would need sc-db (find_or_install_package(sc-db ...)) again.
-#add_executable(load-faces apps/load-faces.cpp)
-#target_link_libraries(load-faces PRIVATE sc::sc-ai sc::sc-db)
-#install(TARGETS load-faces RUNTIME DESTINATION bin COMPONENT runtime)
-
 
 add_executable(run-ocr apps/run-ocr.cpp)
 target_link_libraries(run-ocr PRIVATE sc::sc-ai)

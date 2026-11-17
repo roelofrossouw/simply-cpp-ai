@@ -98,7 +98,7 @@ How it reads a page:
 
 Without the two classifier models (an older simply-cpp-models) it falls back to reading every line both ways.
 
-South African identity documents (ID cards, ID books and passports, read for their fields with this OCR) moved to [sc-doc-classifier](https://github.com/roelofrossouw/simply-cpp-doc-classifier) as `sc::doc::identity`.
+South African identity documents (ID cards, ID books and passports, read for their fields with this OCR) moved to [sc-doc-classifier](https://github.com/roelofrossouw/simply-cpp-doc-classifier) as `sc::doc_classifier::identity`.
 
 ### Which GPU
 
