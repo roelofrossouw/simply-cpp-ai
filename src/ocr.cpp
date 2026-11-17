@@ -1,9 +1,9 @@
-#include "ocr.h"
+#include <sc/ai/ocr.h>
 
-#include "config.h"
-#include "image.h"
-#include "onnx.h"
-#include <dbscan.h>
+#include "ai_config.h"
+#include <sc/image/image.h>
+#include <sc/ai/onnx.h>
+#include <sc/core/dbscan.h>
 
 #include <algorithm>
 #include <array>

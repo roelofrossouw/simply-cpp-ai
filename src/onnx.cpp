@@ -1,5 +1,5 @@
-#include "onnx.h"
-#include "image.h"
+#include <sc/ai/onnx.h>
+#include <sc/image/image.h>
 #include <algorithm>
 #include <atomic>
 #include <stdexcept>
@@ -7,13 +7,13 @@
 #include <iostream>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
-#include <sc.h>
+#include <sc/core/sc.h>
 #ifdef __APPLE__
 #include <coreml_provider_factory.h>
 #else
 #include <dlfcn.h>
 #endif
-#include "config.h"
+#include "ai_config.h"
 const std::filesystem::path default_model_dir = SIMPLY_CPP_MODEL_DIR;
 
 using val = Ort::Value;

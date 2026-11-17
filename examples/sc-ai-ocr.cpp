@@ -7,12 +7,12 @@
 #include <fstream>
 #include <filesystem>
 
-#include <params.h>
-#include <sc.h>
+#include <sc/core/params.h>
+#include <sc/core/sc.h>
 
-#include <image.h>
-#include <ocr.h>
-#include <svg2png.h>
+#include <sc/image/image.h>
+#include <sc/ai/ocr.h>
+#include <sc/image/svg2png.h>
 
 int main(int argc, char **argv) {
     // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.

@@ -10,7 +10,7 @@
 #include <ostream>
 #include <string>
 #include <vector>
-#include "image.h"
+#include <sc/image/image.h>
 
 namespace sc {
     namespace impl {

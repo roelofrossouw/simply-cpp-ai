@@ -2,7 +2,7 @@
 #include <memory>
 #include <string>
 #include <filesystem>
-#include "face.h"
+#include <sc/ai/face.h>
 
 namespace sc {
     class image;

@@ -2,11 +2,11 @@
 
 #include <cstddef>
 #include <filesystem>
-#include <image.h>
+#include <sc/image/image.h>
 #include <nlohmann/json.hpp>
 #include <ostream>
-#include <percent.h>
-#include <rect.h>
+#include <sc/core/percent.h>
+#include <sc/core/rect.h>
 #include <memory>
 #include <string>
 #include <vector>

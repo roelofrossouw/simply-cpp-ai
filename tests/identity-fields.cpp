@@ -1,5 +1,5 @@
-#include "identity.h"
-#include "onnx.h"
+#include <sc/ai/identity.h>
+#include <sc/ai/onnx.h>
 #include <sc_test.h>
 
 #include <cstdlib>

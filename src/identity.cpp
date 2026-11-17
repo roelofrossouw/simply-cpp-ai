@@ -1,8 +1,8 @@
-#include "identity.h"
-#include "facedetector.h"
-#include "image.h"
-#include "ocr.h"
-#include "onnx.h"
+#include <sc/ai/identity.h>
+#include <sc/ai/facedetector.h>
+#include <sc/image/image.h>
+#include <sc/ai/ocr.h>
+#include <sc/ai/onnx.h>
 
 #include <algorithm>
 #include <array>

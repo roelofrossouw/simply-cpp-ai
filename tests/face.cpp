@@ -1,7 +1,7 @@
-#include "face.h"
+#include <sc/ai/face.h>
 
 #include <sc_test.h>
-#include <base64.h>
+#include <sc/core/base64.h>
 #include <chrono>
 #include <filesystem>
 #include <limits>

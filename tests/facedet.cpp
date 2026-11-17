@@ -1,5 +1,5 @@
-#include <sc.h>
-#include "facedetector.h"
+#include <sc/core/sc.h>
+#include <sc/ai/facedetector.h>
 
 using namespace std;
 namespace fs = filesystem;

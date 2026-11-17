@@ -1,7 +1,7 @@
-#include "yolo.h"
-#include "image.h"
-#include "onnx.h"
-#include "video.h"
+#include <sc/ai/yolo.h>
+#include <sc/image/image.h>
+#include <sc/ai/onnx.h>
+#include <sc/image/video.h>
 #include <algorithm>
 #include <map>
 #include <optional>

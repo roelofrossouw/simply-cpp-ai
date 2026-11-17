@@ -1,7 +1,7 @@
-#include "identity.h"
+#include <sc/ai/identity.h>
 #include <sc_test.h>
-#include <base64.h>
-#include <opencv.h>
+#include <sc/core/base64.h>
+#include <sc/image/opencv.h>
 
 #include <filesystem>
 #include <fstream>

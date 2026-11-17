@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
-#include <opencv.h>
+#include <sc/image/opencv.h>
 #include <nlohmann/json.hpp>
 
 namespace sc {

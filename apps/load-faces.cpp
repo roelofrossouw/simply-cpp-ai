@@ -1,6 +1,6 @@
-#include <facedetector.h>
-#include <params.h>
-#include <pgsql.h>
+#include <sc/ai/facedetector.h>
+#include <sc/core/params.h>
+#include <sc/db/pgsql.h>
 #include <iostream>
 
 using namespace std;

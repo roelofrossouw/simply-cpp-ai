@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "face.h"
-#include <percent.h>
+#include <sc/ai/face.h>
+#include <sc/core/percent.h>
 #include <nlohmann/json.hpp>
 
 namespace sc {

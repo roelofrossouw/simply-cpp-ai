@@ -1,5 +1,5 @@
-#include "facedetector.h"
-#include "onnx.h"
+#include <sc/ai/facedetector.h>
+#include <sc/ai/onnx.h>
 #include <optional>
 #include <stdexcept>
 

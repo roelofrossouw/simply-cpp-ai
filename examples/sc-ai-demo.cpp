@@ -15,13 +15,13 @@
 
 #include <nlohmann/json.hpp>
 
-#include <params.h>
-#include <sc.h>
+#include <sc/core/params.h>
+#include <sc/core/sc.h>
 
-#include <image.h>
-#include <svg2png.h>
-#include <video.h>
-#include <yolo.h>
+#include <sc/image/image.h>
+#include <sc/image/svg2png.h>
+#include <sc/image/video.h>
+#include <sc/ai/yolo.h>
 
 namespace {
     // A detection as a line: its type, how sure, where and how big (all in % of the image).

@@ -1,8 +1,8 @@
-#include <sc.h>
-#include <onnx.h>
-#include <ocr.h>
-#include <yolo.h>
-#include <video.h>
+#include <sc/core/sc.h>
+#include <sc/ai/onnx.h>
+#include <sc/ai/ocr.h>
+#include <sc/ai/yolo.h>
+#include <sc/image/video.h>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>

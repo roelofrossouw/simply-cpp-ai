@@ -1,7 +1,7 @@
-#include <sc.h>
-#include "onnx.h"
-#include "image.h"
-#include "ocr.h"
+#include <sc/core/sc.h>
+#include <sc/ai/onnx.h>
+#include <sc/image/image.h>
+#include <sc/ai/ocr.h>
 
 using namespace std;
 using namespace sc;

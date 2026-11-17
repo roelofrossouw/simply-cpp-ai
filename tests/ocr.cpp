@@ -1,4 +1,4 @@
-#include "ocr.h"
+#include <sc/ai/ocr.h>
 
 #include <algorithm>
 #include <cmath>

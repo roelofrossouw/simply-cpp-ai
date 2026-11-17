@@ -58,7 +58,7 @@ target_link_libraries(myapp PRIVATE sc::sc-ai)
 ```
 
 ```cpp
-#include <yolo.h>
+#include <sc/ai/yolo.h>
 #include <iostream>
 
 int main() {
@@ -80,7 +80,7 @@ way: `sc::yolo yolo{"yolo26m"};`.
 PaddleOCR is available through `sc::ocr`. It detects text regions, recognises each line, and reports text, confidence, and its bounding box in the source image:
 
 ```cpp
-#include <ocr.h>
+#include <sc/ai/ocr.h>
 
 sc::ocr reader; // paddle_det_monkt_5 and paddle_rec_monkt_latin from simply-cpp-models
 reader.detect("document.jpg");
@@ -128,7 +128,7 @@ for (int gpu = 0; gpu < std::max(1, sc::onnx::gpus()); ++gpu)
 `sc::facedetector` returns detected faces as `std::vector<sc::face>`. Each `sc::face` owns normalized 512-value features and can optionally retain its aligned face image:
 
 ```cpp
-#include <facedetector.h>
+#include <sc/ai/facedetector.h>
 
 sc::facedetector detector;
 const auto faces = detector.detect("photo.jpg"); // Keep aligned face images (default)

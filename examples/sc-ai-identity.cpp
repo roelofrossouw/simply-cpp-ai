@@ -7,10 +7,10 @@
 #include <string>
 #include <filesystem>
 
-#include <params.h>
-#include <sc.h>
+#include <sc/core/params.h>
+#include <sc/core/sc.h>
 
-#include <identity.h>
+#include <sc/ai/identity.h>
 
 int main(int argc, char **argv) {
     // The command line: -h/--help comes with sc::params, which also reports mistakes and exits.
