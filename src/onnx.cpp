@@ -7,7 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
-#include <sc/core/sc.h>
+#include <sc/core/timer.h>
 #ifdef __APPLE__
 #include <coreml_provider_factory.h>
 #else

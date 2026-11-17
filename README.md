@@ -75,7 +75,7 @@ but much surer, and it finds what the nano model misses, such as people in close
 footage). Both take a 640 x 640 picture and give up to 10 detections (they were exported with `max_det=10`), so they're used the same
 way: `sc::yolo yolo{"yolo26m"};`.
 
-`sc::onnx` (`<onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
+`sc::onnx` (`<sc/ai/onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
 
 PaddleOCR is available through `sc::ocr`. It detects text regions, recognises each line, and reports text, confidence, and its bounding box in the source image:
 
