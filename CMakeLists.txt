@@ -52,9 +52,7 @@ add_sc_object(face
         LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
         PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
 
-add_sc_object(identity
-        LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json
-        PUBLIC_LINK_LIBRARIES sc::sc-image nlohmann_json::nlohmann_json)
+# sc::identity (South African identity documents) moved to sc-doc-classifier as sc::doc::identity.
 
 
 ######################
@@ -80,7 +78,6 @@ endif ()
 ############
 add_sc_example(sc-ai-demo)
 add_sc_example(sc-ai-ocr)
-add_sc_example(sc-ai-identity)
 
 ############
 # Binaries #

@@ -98,16 +98,7 @@ How it reads a page:
 
 Without the two classifier models (an older simply-cpp-models) it falls back to reading every line both ways.
 
-`sc::identity` uses the same engine and models: it turns the photo upright, reads it, and parses the lines for document fields, trying the photo turned a quarter either way only when fields are missing. Tesseract is no longer required; identity recognition remains English-only.
-
-Pass `true` as the second argument to also detect face embeddings from the original image. The embeddings are available through `faces()` and are included in JSON only when face detection was requested:
-
-```cpp
-sc::identity document{"id.jpg", true};
-for (const auto &detected_face: document.faces()) {
-    save_for_matching(detected_face.to_json());
-}
-```
+South African identity documents (ID cards, ID books and passports, read for their fields with this OCR) moved to [sc-doc-classifier](https://github.com/roelofrossouw/simply-cpp-doc-classifier) as `sc::doc::identity`.
 
 ### Which GPU
 
@@ -263,7 +254,6 @@ More demos, installed alongside it:
 | Demo | Shows |
 |---|---|
 | `sc-ai-ocr [image]` | reading text with `sc::ocr`: each line with its confidence and position; without an image it renders a few lines of text to read |
-| `sc-ai-identity [photo]` | checking South African identity numbers (`valid_id_number`, `id_date_of_birth`, `id_sex`), and reading a photographed ID card, ID book or passport when given one |
 
 ## Requirements
 
@@ -279,7 +269,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The identity and OCR tests read specimen documents with made-up data (`tests/resource/samples`).
+The OCR and face tests read specimen documents with made-up data (`tests/resource/samples`).
 Real identity documents are never committed: put them in `tests/resource/private/documents`
 (git-ignored), where face detection and a few extra checks look for them; without them those are
 skipped.
