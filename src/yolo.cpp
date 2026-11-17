@@ -1,4 +1,5 @@
 #include <sc/ai/yolo.h>
+#include <sc/core/percent.h>
 #include <sc/image/image.h>
 #include <sc/ai/onnx.h>
 #include <sc/image/video.h>

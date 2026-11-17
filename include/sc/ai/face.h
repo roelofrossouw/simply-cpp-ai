@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <optional>
+#include <sc/core/percent.h>
 #include <sc/image/opencv.h>
 #include <nlohmann/json.hpp>
 
