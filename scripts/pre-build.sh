@@ -42,10 +42,11 @@ pushd /var/www/build/repo || exit
   # remove from every dist before re-including anywhere: reprepro refuses to
   # include a same-version file with different content into one dist while
   # another still references the old pool copy under that same version+name.
+  # jammy is no longer a default distribution (2026-11-18); the old jammy copy is still removed so
+  # it can't hold the pool file, but nothing is published there.
   reprepro remove jammy simply-cpp-models
   reprepro remove noble simply-cpp-models
   reprepro remove resolute simply-cpp-models
-  reprepro includedeb jammy "$model_file"
   reprepro includedeb noble "$model_file"
   reprepro includedeb resolute "$model_file"
 popd || exit
