@@ -106,6 +106,10 @@ namespace sc {
 
     yolo::~yolo() = default;
 
+    bool yolo::on_gpu() const {
+        return impl->detector.on_gpu();
+    }
+
     yolo::yolo(yolo &&) noexcept = default;
 
     yolo &yolo::operator=(yolo &&) noexcept = default;

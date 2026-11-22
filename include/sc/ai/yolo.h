@@ -17,7 +17,7 @@ namespace sc {
 
     class yolo {
     public:
-        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()).
+        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()), or onnx::cpu for the CPU.
         explicit yolo(const std::string &model, int gpu = 0);
 
         ~yolo();
@@ -33,6 +33,9 @@ namespace sc {
         friend std::ostream &operator<<(std::ostream &lhs, const yolo &rhs);
 
         void set_threshold(double threshold);
+
+        /// Whether the model runs on a GPU (CUDA, or CoreML) rather than the CPU.
+        [[nodiscard]] bool on_gpu() const;
 
         void detect(const std::filesystem::path &image_path) const;
         void detect(const image &input) const;

@@ -74,11 +74,13 @@ namespace sc {
                 }
 
 #ifdef __APPLE__
-                if (use_metal) {
+                if (use_metal && gpu != onnx::cpu) {
                     Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0));
+                    accelerated = true;
                 }
 #else
-                const bool cuda = cuda_provider_available();
+                // onnx::cpu: the CPU, whatever CUDA there is.
+                const bool cuda = gpu != onnx::cpu && cuda_provider_available();
                 if (cuda && cuda_runtime_available()) {
                     if (const int devices = cuda_devices(); gpu < 0 || (devices > 0 && gpu >= devices))
                         throw std::invalid_argument("No GPU " + std::to_string(gpu) + ": there are " + std::to_string(devices));
@@ -96,6 +98,7 @@ namespace sc {
                         if (cuda_options.gpu_mem_limit > 0)
                             run_options.AddConfigEntry("memory.enable_memory_arena_shrinkage", ("gpu:" + std::to_string(gpu)).c_str());
                         options.AppendExecutionProvider_CUDA(cuda_options);
+                        accelerated = true;
                     } catch (const Ort::Exception &error) {
                         std::cerr << "CUDA execution provider unavailable: " << error.what() << '\n';
                     }
@@ -245,6 +248,8 @@ namespace sc {
                 return {static_cast<int>(input_shape[3]), static_cast<int>(input_shape[2])};
             }
 
+            bool accelerated = false; // on a GPU (CUDA's provider, or CoreML)
+
         private:
 #ifdef NDEBUG
             Ort::Env env{ORT_LOGGING_LEVEL_ERROR, "simply-cpp-onnx"};
@@ -320,6 +325,10 @@ namespace sc {
 
     void onnx::show_shapes() const {
         impl->show_shapes();
+    }
+
+    bool onnx::on_gpu() const {
+        return impl->accelerated;
     }
 
     bool onnx::accelerated() {

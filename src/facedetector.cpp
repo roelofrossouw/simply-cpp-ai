@@ -213,6 +213,10 @@ namespace sc {
 
     facedetector::~facedetector() = default;
 
+    bool facedetector::on_gpu() const {
+        return impl->detector.on_gpu() && impl->extractor.on_gpu();
+    }
+
     facedetector::facedetector(facedetector &&) noexcept = default;
 
     facedetector &facedetector::operator=(facedetector &&) noexcept = default;

@@ -55,8 +55,27 @@ int main() {
         if (gpus > 0) {
             const sc::yolo last{MODEL.string(), gpus - 1}; // each GPU takes a model
             CHECK_THROWS_AS(sc::yolo(MODEL.string(), gpus), std::invalid_argument);
-            CHECK_THROWS_AS(sc::yolo(MODEL.string(), -1), std::invalid_argument);
+            CHECK_THROWS_AS(sc::yolo(MODEL.string(), -2), std::invalid_argument);
+            CHECK(last.on_gpu());
         }
+    }
+
+    SECTION("onnx::cpu puts a model on the CPU, whatever GPU there is");
+    {
+        const sc::yolo on_cpu{MODEL.string(), sc::onnx::cpu};
+        CHECK(!on_cpu.on_gpu());
+        const sc::onnx raw{MODEL.string(), true, sc::onnx::cpu};
+        CHECK(!raw.on_gpu());
+        // The default: a GPU where there is one (CoreML on Apple platforms), else the CPU too.
+        const sc::onnx default_device{MODEL.string()};
+#ifdef __APPLE__
+        CHECK(default_device.on_gpu());
+#else
+        CHECK_EQ(default_device.on_gpu(), sc::onnx::gpus() > 0);
+#endif
+        // It detects all the same.
+        on_cpu.detect(sc::image{(IMAGES / "000000031296.jpg").string()}); // people at a table
+        CHECK(!static_cast<nlohmann::ordered_json>(on_cpu).empty());
     }
 
     SECTION("Nothing found is an empty list, not null");

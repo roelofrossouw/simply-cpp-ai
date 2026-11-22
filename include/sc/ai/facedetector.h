@@ -13,7 +13,7 @@ namespace sc {
 
     class facedetector {
     public:
-        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()).
+        /// gpu: the CUDA device to run on, from 0 (see onnx::gpus()), or onnx::cpu for the CPU.
         explicit facedetector(int gpu = 0);
 
         ~facedetector();
@@ -23,6 +23,9 @@ namespace sc {
         facedetector &operator=(facedetector &&) noexcept;
 
         void set_threshold(double threshold);
+
+        /// Whether its models run on a GPU (CUDA, or CoreML) rather than the CPU.
+        [[nodiscard]] bool on_gpu() const;
 
         void set_max_faces(int max_faces);
 

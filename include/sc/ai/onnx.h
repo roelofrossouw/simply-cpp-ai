@@ -50,8 +50,12 @@ namespace sc {
 
     class onnx {
     public:
-        /// gpu: the CUDA device to run on, from 0 (see gpus()); throws std::invalid_argument for one
-        /// that isn't there. Without CUDA (and on Apple platforms) it isn't used.
+        /// For gpu: the CPU, even where CUDA (or CoreML) is there to use.
+        static constexpr int cpu = -1;
+
+        /// gpu: the CUDA device to run on, from 0 (see gpus()), or onnx::cpu; throws
+        /// std::invalid_argument for one that isn't there. Without CUDA (and on Apple platforms)
+        /// a device number isn't used: the model runs on the CPU (or CoreML).
         explicit onnx(const std::string &model, bool use_metal = true, int gpu = 0);
 
         ~onnx();
@@ -83,6 +87,10 @@ namespace sc {
         [[nodiscard]] size_i image_size() const;
 
         void show_shapes() const;
+
+        /// Whether this model runs accelerated: on a CUDA GPU (or CoreML on Apple platforms) rather
+        /// than the CPU. False when CUDA was there but its provider couldn't be used.
+        [[nodiscard]] bool on_gpu() const;
 
         static void show_providers();
 

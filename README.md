@@ -105,7 +105,14 @@ South African identity documents (ID cards, ID books and passports, read for the
 Models run on CUDA where its provider and runtime are there (CoreML on Apple platforms), else on
 the CPU. With several GPUs, `sc::onnx`, `sc::yolo` and `sc::facedetector` take the one to use,
 from 0; `sc::onnx::gpus()` says how many there are (0 without CUDA). A GPU that isn't there
-throws `std::invalid_argument`.
+throws `std::invalid_argument`. `sc::onnx::cpu` (since 3.1.0) puts a model on the CPU even where
+there are GPUs, and `on_gpu()` (on `sc::onnx`, `sc::yolo` and `sc::facedetector`) says where a model
+really runs: false on the CPU, also when CUDA was there but its provider couldn't be used.
+
+```cpp
+const sc::yolo on_cpu{"yolo26n", sc::onnx::cpu};
+std::cout << (on_cpu.on_gpu() ? "GPU" : "CPU") << '\n'; // CPU
+```
 
 ```cpp
 // A model on each GPU, for a thread each.
