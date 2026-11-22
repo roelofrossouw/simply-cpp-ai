@@ -156,6 +156,17 @@ int main() {
         CHECK_EQ(best.at(0)[4].get<double>(), person["confidence"].get<double>());
         for (std::size_t i = 1; i < best.size(); ++i) CHECK(best.at(i)[4].get<double>() <= best.at(i - 1)[4].get<double>());
 
+        // detect_until(): stop() is asked before each frame; once it says true, nothing is returned.
+        sc::video stopped{clip_file};
+        int asked = 0;
+        const auto cut_short = nano.detect_until(stopped, [&asked] { return ++asked > 3; }, std::chrono::milliseconds{0});
+        CHECK(!cut_short.has_value());
+        CHECK_EQ(asked, 4); // three frames run, then it stopped
+        sc::video whole{clip_file};
+        const auto never = nano.detect_until(whole, [] { return false; }, std::chrono::milliseconds{0});
+        CHECK(never.has_value());
+        CHECK_EQ(*never, best); // as detect()
+
         sc::video grey_only{clip_file};
         sc::yolo blind{MODEL.string()};
         blind.set_threshold(100);

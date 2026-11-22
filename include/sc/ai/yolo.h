@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
+#include <optional>
 #include <ostream>
 #include <memory>
 #include <string>
@@ -62,6 +64,12 @@ namespace sc {
         /// Afterwards to_json() and annotated() are the last frame's.
         [[nodiscard]] nlohmann::ordered_json detect(video &clip, std::chrono::milliseconds every = std::chrono::seconds(1),
                                                     detail amount = detail::best) const;
+
+        /// detect(video), asking stop() before each frame: once it says true, the rest of the video
+        /// is skipped and nothing is returned (std::nullopt), for a service stopping mid-video.
+        [[nodiscard]] std::optional<nlohmann::ordered_json> detect_until(video &clip, const std::function<bool()> &stop,
+                                                                         std::chrono::milliseconds every = std::chrono::seconds(1),
+                                                                         detail amount = detail::best) const;
 
         /// The objects found, each boxed and labelled, on a copy of the image read last: to save or draw on.
         [[nodiscard]] image annotated() const;

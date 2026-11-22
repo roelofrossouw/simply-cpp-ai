@@ -196,6 +196,10 @@ how many frames it was in, how sure it was at most, and that frame's number, tim
   "cell phone": {"count": 9, "confidence": 68.8, "frame": 105, "time": 6969, "detections": [...]}}}
 ```
 
+`yolo.detect_until(clip, stop, every, amount)` (since 3.2.0) does the same, asking `stop()` before
+each frame: once it says true, the rest of the video is skipped and it gives `std::nullopt`, for a
+service stopping mid-video (streamvms passes `sc::kafka::consumer::stopping`).
+
 Without a photo or video it uses a small rendered image with nothing in it, which still
 shows the model, ONNX Runtime and sc-image loading and running. It is installed
 with the runtime package (`simply-cpp-ai`), so it works without the `-dev`

@@ -139,6 +139,11 @@ namespace sc {
     }
 
     nlohmann::ordered_json yolo::detect(video &clip, const std::chrono::milliseconds every, const detail amount) const {
+        return *detect_until(clip, {}, every, amount);
+    }
+
+    std::optional<nlohmann::ordered_json> yolo::detect_until(video &clip, const std::function<bool()> &stop,
+                                                             const std::chrono::milliseconds every, const detail amount) const {
         // Each kind of object: the frames it was in, its surest detection and the frame that was in.
         struct best {
             std::string name;
@@ -151,7 +156,10 @@ namespace sc {
         };
         std::map<std::string, best> found;
         int frames = 0;
-        while (const auto frame = clip.next(every)) {
+        while (true) {
+            if (stop && stop()) return std::nullopt;
+            const auto frame = clip.next(every);
+            if (!frame) break;
             impl->run(frame->picture);
             ++frames;
             const auto detections = impl->json();
@@ -186,7 +194,7 @@ namespace sc {
         for (const auto &kind: kinds)
             objects[kind.name] = {{"count", kind.count}, {"confidence", kind.confidence}, {"frame", kind.frame},
                                   {"time", kind.time}, {"detections", kind.detections}};
-        return {{"frames", frames}, {"every", every.count()}, {"objects", objects}};
+        return nlohmann::ordered_json{{"frames", frames}, {"every", every.count()}, {"objects", objects}};
     }
 
     image yolo::annotated() const {
