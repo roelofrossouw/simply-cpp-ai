@@ -13,7 +13,7 @@ const filesystem::path image_path{"/var/www/build/sc-ai/tests/resource/test/"};
 #endif
 
 int main() {
-    ocr ocr;
+    ai::ocr ocr;
     for (const auto &file: filesystem::directory_iterator(image_path)) {
         if (file.path().filename() != "ID-10.jpg") continue;
         // if (file.path().filename() != "D1249 - MJ Mcameni - Paspoort 01.03.2031.jpg"
@@ -23,7 +23,7 @@ int main() {
         //     continue;
         if (!file.is_regular_file()) continue;
         timer sw;
-        image img(file.path());
+        image::picture img(file.path());
         cout << sw << " Loaded " << file.path().filename() << endl;
         sw.reset();
         ocr.detect(img);

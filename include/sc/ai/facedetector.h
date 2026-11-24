@@ -4,8 +4,12 @@
 #include <filesystem>
 #include <sc/ai/face.h>
 
-namespace sc {
-    class image;
+namespace sc::image {
+    class picture;
+    class video;
+}
+
+namespace sc::ai {
 
     namespace impl {
         class face_impl;
@@ -32,10 +36,10 @@ namespace sc {
         [[nodiscard]] std::vector<face> detect(const std::filesystem::path &image_path,
                                                 bool include_face_images = true) const;
 
-        [[nodiscard]] std::vector<face> detect(const image &input, bool include_face_images = true) const;
+        [[nodiscard]] std::vector<face> detect(const image::picture &input, bool include_face_images = true) const;
 
         /// The faces found, boxed with their landmarks, on a copy of the image read last: to save or draw on.
-        [[nodiscard]] image annotated() const;
+        [[nodiscard]] image::picture annotated() const;
 
         /// Where the faces the last detect() found are, in its image's own pixels (not the detector's
         /// letterboxed copy), in the order detect() gave them: e.g. to tell a portrait from a face

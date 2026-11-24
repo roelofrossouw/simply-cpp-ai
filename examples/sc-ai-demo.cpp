@@ -27,7 +27,7 @@ namespace {
     // A detection as a line: its type, how sure, where and how big (all in % of the image).
     std::string described(const nlohmann::ordered_json &found) {
         std::ostringstream line;
-        line << std::left << std::setw(14) << sc::yolo::object_name(found[5].get<int>()) << std::right
+        line << std::left << std::setw(14) << sc::ai::yolo::object_name(found[5].get<int>()) << std::right
              << std::fixed << std::setprecision(1) << std::setw(5) << found[4].get<double>()
              << "% sure, centred at (" << found[0].get<double>() << "%, " << found[1].get<double>() << "%), "
              << found[2].get<double>() << "% x " << found[3].get<double>() << "% of the image";
@@ -82,14 +82,14 @@ int main(int argc, char **argv) {
             // Just the result, for another program: what yolo.to_json() gives for a photo, or
             // yolo.detect(video)'s summary for a video.
             if (source.empty() && video_file.empty()) throw std::invalid_argument("--json needs a photo or --video");
-            sc::yolo yolo{args.as<std::string>("model")};
+            sc::ai::yolo yolo{args.as<std::string>("model")};
             yolo.set_threshold(threshold / 100);
             if (video_file.empty()) {
                 yolo.detect(std::filesystem::path{source});
                 std::cout << yolo.to_json().dump(2) << '\n';
             } else {
-                sc::video clip{video_file};
-                const auto amount = args.as<bool>("full") ? sc::yolo::detail::full : sc::yolo::detail::best;
+                sc::image::video clip{video_file};
+                const auto amount = args.as<bool>("full") ? sc::ai::yolo::detail::full : sc::ai::yolo::detail::best;
                 std::cout << yolo.detect(clip, every, amount).dump(2) << '\n';
             }
             return 0;
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
         if (source.empty() && video_file.empty()) {
             sc::console::output() << "No photo given (sc-ai-demo <photo>, or --video <file>), so using a rendered landscape with no objects in it\n";
             source = (std::filesystem::temp_directory_path() / "sc-ai-demo.png").string();
-            std::ofstream{source, std::ios::binary} << sc::svg2png::FromString(
+            std::ofstream{source, std::ios::binary} << sc::image::svg2png::from_string(
                 R"(<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480">)"
                 R"(<rect width="640" height="480" fill="#87ceeb"/>)"
                 R"(<rect y="360" width="640" height="120" fill="#3a7d44"/></svg>)");
@@ -109,8 +109,8 @@ int main(int argc, char **argv) {
         // [readme]
         sc::console::heading("Loading the model");
         const auto model = args.as<std::string>("model"); // a name in simply-cpp-models, or a file
-        sc::yolo yolo{model};
-        sc::console::show_text("sc::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
+        sc::ai::yolo yolo{model};
+        sc::console::show_text("sc::ai::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
         yolo.set_threshold(threshold / 100); // a fraction: 0.3 lists what it's at least 30% sure of
 
         if (video_file.empty()) {
@@ -124,12 +124,12 @@ int main(int argc, char **argv) {
             sc::console::heading(std::to_string(detections.size()) + (detections.size() == 1 ? " object found" : " objects found"));
             for (const auto &found: detections) sc::console::note(described(found));
         } else {
-            // A video: sc-image's sc::video reads it a frame at a time, each frame an sc::image.
+            // A video: sc-image's sc::image::video reads it a frame at a time, each frame an sc::image::picture.
             sc::console::heading("Detecting objects in a video");
-            sc::video clip{video_file};
+            sc::image::video clip{video_file};
             std::ostringstream about;
             about << clip.size() << ", " << clip.fps() << " frames a second, " << clock(clip.duration());
-            sc::console::show_text("sc::video clip{\"" + video_file.string() + "\"};", about.str());
+            sc::console::show_text("sc::image::video clip{\"" + video_file.string() + "\"};", about.str());
 
             std::map<std::string, int> frames_with; // how many frames each kind of object was in
             int looked_at = 0;
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
                 ++looked_at;
                 const auto detections = yolo.to_json();
                 std::map<std::string, int> here;
-                for (const auto &found: detections) ++here[sc::yolo::object_name(found[5].get<int>())];
+                for (const auto &found: detections) ++here[sc::ai::yolo::object_name(found[5].get<int>())];
                 std::string line = clock(frame->time) + "  ";
                 if (here.empty()) line += "nothing";
                 for (const auto &[name, count]: here) {

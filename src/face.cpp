@@ -8,12 +8,12 @@
 #include <numeric>
 #include <stdexcept>
 
-namespace sc {
+namespace sc::ai {
     face::face(const float *features) {
         set_features(features);
     }
 
-    face::face(const float *features, const image &face_image) : image_(face_image) {
+    face::face(const float *features, const image::picture &face_image) : image_(face_image) {
         if (face_image.empty()) throw std::invalid_argument{"Face image cannot be empty"};
         set_features(features);
     }
@@ -21,7 +21,7 @@ namespace sc {
     face::face(const feature_vector &features) : face(features.data()) {
     }
 
-    face::face(const feature_vector &features, const image &face_image) : face(features.data(), face_image) {
+    face::face(const feature_vector &features, const image::picture &face_image) : face(features.data(), face_image) {
     }
 
     const face::feature_vector &face::features() const noexcept {
@@ -32,7 +32,7 @@ namespace sc {
         return image_.has_value();
     }
 
-    const image *face::face_image() const noexcept {
+    const image::picture *face::face_image() const noexcept {
         return image_ ? &*image_ : nullptr;
     }
 
@@ -64,7 +64,7 @@ namespace sc {
         // The face's picture, when one came along: base64 PNG under "image" (what a program sending
         // faces to another adds; to_json() leaves it out).
         if (json.contains("image") && json["image"].is_string() && !json["image"].get<std::string>().empty())
-            return face{features, image{base64::decode(json["image"].get<std::string>())}};
+            return face{features, image::picture{base64::decode(json["image"].get<std::string>())}};
         return face{features};
     }
 

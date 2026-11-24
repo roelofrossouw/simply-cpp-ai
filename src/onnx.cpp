@@ -19,7 +19,7 @@ const std::filesystem::path default_model_dir = SIMPLY_CPP_MODEL_DIR;
 using val = Ort::Value;
 namespace fs = std::filesystem;
 
-namespace sc {
+namespace sc::ai {
     namespace impl {
 #ifndef __APPLE__
         bool cuda_runtime_available() {
@@ -156,7 +156,7 @@ namespace sc {
                 return data;
             }
 
-            std::vector<output> run_images(const std::vector<image> &images, const double scale, const double mean,
+            std::vector<output> run_images(const std::vector<image::picture> &images, const double scale, const double mean,
                                            const int minimum_width = 0) {
                 if (images.empty()) return {};
                 if (inputs.size() != 1 || inputs.front().second.size() != 4 ||
@@ -289,11 +289,11 @@ namespace sc {
 
     onnx &onnx::operator=(onnx &&) noexcept = default;
 
-    std::vector<output> onnx::process_image(const image &img) const {
+    std::vector<output> onnx::process_image(const image::picture &img) const {
         return process_image(img, 1.0 / 255.0, 127.5);
     }
 
-    std::vector<output> onnx::process_image(const image &img, const double scale, const double mean) const {
+    std::vector<output> onnx::process_image(const image::picture &img, const double scale, const double mean) const {
         img.generate_blob(scale, mean, true);
         const val input = val::CreateTensor<float>(impl->memInfo,
                                                    img.blob(), img.blob_size(),
@@ -301,16 +301,16 @@ namespace sc {
         return impl->run(input);
     }
 
-    std::vector<output> onnx::process_images(const std::vector<image> &images) const {
+    std::vector<output> onnx::process_images(const std::vector<image::picture> &images) const {
         return process_images(images, 1.0 / 255.0, 127.5);
     }
 
-    std::vector<output> onnx::process_images(const std::vector<image> &images, const double scale,
+    std::vector<output> onnx::process_images(const std::vector<image::picture> &images, const double scale,
                                              const double mean) const {
         return impl->run_images(images, scale, mean);
     }
 
-    std::vector<output> onnx::process_images(const std::vector<image> &images, const double scale, const double mean,
+    std::vector<output> onnx::process_images(const std::vector<image::picture> &images, const double scale, const double mean,
                                              const int width) const {
         return impl->run_images(images, scale, mean, width);
     }

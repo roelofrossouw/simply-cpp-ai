@@ -9,9 +9,12 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 
-namespace sc {
-    class image;
+namespace sc::image {
+    class picture;
     class video;
+}
+
+namespace sc::ai {
 
     namespace impl {
         class yolo_impl;
@@ -40,12 +43,12 @@ namespace sc {
         [[nodiscard]] bool on_gpu() const;
 
         void detect(const std::filesystem::path &image_path) const;
-        void detect(const image &input) const;
+        void detect(const image::picture &input) const;
 
         /// What detect(video) gives: what an image would (detail::best), or a summary (detail::full).
         enum class detail { best, full };
 
-        /// Runs over a video a frame every so often (sc-image's sc::video::next(every)).
+        /// Runs over a video a frame every so often (sc-image's sc::image::video::next(every)).
         ///
         /// detail::best gives what to_json() gives for an image, so a video and a photo read the same:
         /// the detections, [centre x %, centre y %, width %, height %, confidence %, type], here each
@@ -62,17 +65,17 @@ namespace sc {
         ///                    "detections": [[38.14, 56.46, 75.2, 84.97, 93.6, 0], ...]}, ...}}
         ///
         /// Afterwards to_json() and annotated() are the last frame's.
-        [[nodiscard]] nlohmann::ordered_json detect(video &clip, std::chrono::milliseconds every = std::chrono::seconds(1),
+        [[nodiscard]] nlohmann::ordered_json detect(image::video &clip, std::chrono::milliseconds every = std::chrono::seconds(1),
                                                     detail amount = detail::best) const;
 
         /// detect(video), asking stop() before each frame: once it says true, the rest of the video
         /// is skipped and nothing is returned (std::nullopt), for a service stopping mid-video.
-        [[nodiscard]] std::optional<nlohmann::ordered_json> detect_until(video &clip, const std::function<bool()> &stop,
+        [[nodiscard]] std::optional<nlohmann::ordered_json> detect_until(image::video &clip, const std::function<bool()> &stop,
                                                                          std::chrono::milliseconds every = std::chrono::seconds(1),
                                                                          detail amount = detail::best) const;
 
         /// The objects found, each boxed and labelled, on a copy of the image read last: to save or draw on.
-        [[nodiscard]] image annotated() const;
+        [[nodiscard]] image::picture annotated() const;
 
         nlohmann::ordered_json to_json() const;
 

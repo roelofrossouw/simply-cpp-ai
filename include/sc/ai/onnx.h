@@ -12,7 +12,7 @@
 #include <vector>
 #include <sc/image/image.h>
 
-namespace sc {
+namespace sc::ai {
     namespace impl {
         class onnx_impl;
     }
@@ -65,20 +65,20 @@ namespace sc {
         onnx &operator=(onnx &&) noexcept;
 
         /// Runs one inference for an RGB image, given to the model as (pixel - 127.5) / 255.
-        std::vector<output> process_image(const image &img) const;
+        std::vector<output> process_image(const image::picture &img) const;
 
         /// Runs one inference for an RGB image, given to the model as (pixel - mean) * scale.
-        std::vector<output> process_image(const image &img, double scale, double mean) const;
+        std::vector<output> process_image(const image::picture &img, double scale, double mean) const;
 
         /// Runs one inference for equally tall RGB images, padding them to a common width.
-        std::vector<output> process_images(const std::vector<image> &images) const;
+        std::vector<output> process_images(const std::vector<image::picture> &images) const;
 
         /// The same, with each image given to the model as (pixel - mean) * scale.
-        std::vector<output> process_images(const std::vector<image> &images, double scale, double mean) const;
+        std::vector<output> process_images(const std::vector<image::picture> &images, double scale, double mean) const;
 
         /// The same, padded to at least width: a long list read a few at a time, each as if in one batch
         /// as wide as the widest of all (a model can read an image differently with more padding).
-        std::vector<output> process_images(const std::vector<image> &images, double scale, double mean, int width) const;
+        std::vector<output> process_images(const std::vector<image::picture> &images, double scale, double mean, int width) const;
 
         [[nodiscard]] int yolo26_size() const;
 

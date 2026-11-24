@@ -13,11 +13,11 @@
 int main() {
     SECTION("Recognises text and returns positioned lines");
     {
-        // The specimen card is turned sideways: sc::ocr reads it upright, with boxes on the image
+        // The specimen card is turned sideways: sc::ai::ocr reads it upright, with boxes on the image
         // as given. Read once, as each read is a few seconds on a CPU.
-        sc::ocr reader;
-        const sc::image given{"resource/samples/card-sideways.jpg"};
-        const int rotation = sc::ocr::upright_rotation(given);
+        sc::ai::ocr reader;
+        const sc::image::picture given{"resource/samples/card-sideways.jpg"};
+        const int rotation = sc::ai::ocr::upright_rotation(given);
         CHECK(rotation == 90 || rotation == 270);
         reader.detect(given, 0);
         CHECK_EQ(reader.rotation(), rotation);
@@ -42,13 +42,13 @@ int main() {
 
     SECTION("Detects regions and recognises extracted text");
     {
-        // sc::ocr reads the card upright (it is turned sideways), so the reference does too.
-        const sc::image given{"resource/samples/card-sideways.jpg"};
-        sc::image input{given};
-        const int rotation = sc::ocr::upright_rotation(given);
+        // sc::ai::ocr reads the card upright (it is turned sideways), so the reference does too.
+        const sc::image::picture given{"resource/samples/card-sideways.jpg"};
+        sc::image::picture input{given};
+        const int rotation = sc::ai::ocr::upright_rotation(given);
         CHECK(rotation == 90 || rotation == 270);
         if (rotation) input.rotate(rotation);
-        sc::ocr_detector detector;
+        sc::ai::ocr_detector detector;
         const auto regions = detector.detect(input);
         CHECK(!regions.empty());
         for (const auto &region: regions) {
@@ -64,11 +64,11 @@ int main() {
         CHECK_EQ(detected_images.size(), regions.size());
 
         // Recognition on a few of the lines: each one costs time on a CPU, and a few show it.
-        const std::vector<sc::image> some(text_images.begin(), text_images.begin() + std::min<std::size_t>(8, text_images.size()));
-        sc::ocr_recognizer recognizer;
+        const std::vector<sc::image::picture> some(text_images.begin(), text_images.begin() + std::min<std::size_t>(8, text_images.size()));
+        sc::ai::ocr_recognizer recognizer;
         const auto recognised = recognizer.recognize(some);
         CHECK_EQ(recognised.size(), some.size());
-        CHECK(std::ranges::any_of(recognised, [](const sc::ocr_recognizer::result &result) {
+        CHECK(std::ranges::any_of(recognised, [](const sc::ai::ocr_recognizer::result &result) {
             return !result.text.empty();
         }));
         for (const auto &result: recognised) {
@@ -78,7 +78,7 @@ int main() {
 
         // The threshold leaves only the lines that reach it.
         constexpr double recognition_threshold = 90;
-        const auto expected_count = std::ranges::count_if(recognised, [](const sc::ocr_recognizer::result &result) {
+        const auto expected_count = std::ranges::count_if(recognised, [](const sc::ai::ocr_recognizer::result &result) {
             return result.confidence >= recognition_threshold;
         });
         recognizer.set_threshold(recognition_threshold);
@@ -91,7 +91,7 @@ int main() {
 
     SECTION("Rejects missing input");
     {
-        sc::ocr reader;
+        sc::ai::ocr reader;
         CHECK_THROWS_AS(reader.detect("resource/samples/not-an-image.jpg"), std::runtime_error);
         CHECK_THROWS_AS(reader.detect("resource/samples/card-sideways.jpg", -1), std::invalid_argument);
         CHECK_THROWS_AS(reader.detect("resource/samples/card-sideways.jpg", 101), std::invalid_argument);

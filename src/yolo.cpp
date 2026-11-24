@@ -1,5 +1,5 @@
 #include <sc/ai/yolo.h>
-#include <sc/core/percent.h>
+#include <sc/geometry/percent.h>
 #include <sc/image/image.h>
 #include <sc/ai/onnx.h>
 #include <sc/image/video.h>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace sc {
+namespace sc::ai {
     namespace impl {
         const std::vector<std::string> kCocoNames = {
             "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
@@ -26,7 +26,7 @@ namespace sc {
 
         class detection {
         public:
-            detection(const float *data, const image &img)
+            detection(const float *data, const image::picture &img)
                 : type(static_cast<int>(data[5])),
                   confidence(data[4], 1),
                   box(rect::ltrb(data[0], data[1], data[2], data[3])) {
@@ -60,10 +60,10 @@ namespace sc {
                 threshold_ = {threshold, 2};
             }
 
-            void run(const image &source) {
+            void run(const image::picture &source) {
                 detections.clear();
                 original = source;
-                image input{*original};
+                image::picture input{*original};
                 if (const auto model_size = detector.image_size(); model_size.width() > 0 && model_size.height() > 0)
                     input.snap_to_size(0, {model_size});
                 const auto output = detector.process_image(input).front();
@@ -77,23 +77,23 @@ namespace sc {
                 return result;
             }
 
-            [[nodiscard]] image annotated() const {
+            [[nodiscard]] image::picture annotated() const {
                 if (!original) throw std::runtime_error("No image has been detected");
-                image result{*original};
+                image::picture result{*original};
                 for (const auto &detection: detections) {
                     if (detection.confidence < threshold_) continue;
                     const auto box = detection.box * result.size();
-                    result.draw(box, stroke{color::Blue, 2});
+                    result.draw(box, graphics::stroke{color::Blue, 2});
 
                     const auto label = yolo::object_name(detection.type) + " (" + detection.confidence + ")";
                     const auto top = box.top() < 25 ? box.top() + 25 : box.top() - 5;
-                    result.draw(text{label, {box.left(), top}, {"sans-serif", 16}}, color::Blue);
+                    result.draw(graphics::text{label, {box.left(), top}, {"sans-serif", 16}}, color::Blue);
                 }
                 return result;
             }
 
             onnx detector;
-            std::optional<image> original;
+            std::optional<image::picture> original;
             std::vector<detection> detections;
 
         private:
@@ -131,18 +131,18 @@ namespace sc {
     }
 
     void yolo::detect(const std::filesystem::path &image_path) const {
-        detect(image{image_path.string()});
+        detect(image::picture{image_path.string()});
     }
 
-    void yolo::detect(const image &input) const {
+    void yolo::detect(const image::picture &input) const {
         impl->run(input);
     }
 
-    nlohmann::ordered_json yolo::detect(video &clip, const std::chrono::milliseconds every, const detail amount) const {
+    nlohmann::ordered_json yolo::detect(image::video &clip, const std::chrono::milliseconds every, const detail amount) const {
         return *detect_until(clip, {}, every, amount);
     }
 
-    std::optional<nlohmann::ordered_json> yolo::detect_until(video &clip, const std::function<bool()> &stop,
+    std::optional<nlohmann::ordered_json> yolo::detect_until(image::video &clip, const std::function<bool()> &stop,
                                                              const std::chrono::milliseconds every, const detail amount) const {
         // Each kind of object: the frames it was in, its surest detection and the frame that was in.
         struct best {
@@ -197,7 +197,7 @@ namespace sc {
         return nlohmann::ordered_json{{"frames", frames}, {"every", every.count()}, {"objects", objects}};
     }
 
-    image yolo::annotated() const {
+    image::picture yolo::annotated() const {
         return impl->annotated();
     }
 

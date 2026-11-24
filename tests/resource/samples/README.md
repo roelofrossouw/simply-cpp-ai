@@ -5,7 +5,7 @@ passport data page with a machine readable zone whose check digits agree, and a 
 The people, numbers and dates are invented, and each is marked "SPECIMEN - NOT A VALID DOCUMENT".
 
 The JPEGs were rendered from the SVGs beside them (in Arial or Helvetica) and are kept as they
-are, so the tests read the same pixels on every machine. sc-image's `sc::svg2png` draws text in
+are, so the tests read the same pixels on every machine. sc-image's `sc::image::svg2png` draws text in
 OpenCV's Hershey fonts, so it can't render them again like for like.
 
 TODO: re-render them once sc-image draws text in real fonts.

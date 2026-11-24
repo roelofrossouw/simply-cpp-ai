@@ -5,7 +5,7 @@
 
 using namespace std;
 
-namespace sc {
+namespace sc::ai {
     namespace impl {
         static array STRIDES = {8, 16, 32};
         constexpr int stride = 32;
@@ -101,19 +101,19 @@ namespace sc {
 
             void set_max_faces(const int max_faces) { max_faces_ = max_faces; }
 
-            static image extract_face(const detection &detection, const image &img) {
+            static image::picture extract_face(const detection &detection, const image::picture &img) {
                 return img.warp(detection.landmarks, ARC_FACE_TEMPLATE, {112, 112});
             }
 
-            static void annotate_face(const detection &detection, image &img) {
-                img.draw(detection.box, stroke{color::Blue, 2});
+            static void annotate_face(const detection &detection, image::picture &img) {
+                img.draw(detection.box, graphics::stroke{color::Blue, 2});
                 const point label_position{static_cast<double>(detection.box.left()),
                                            std::max(20.0, static_cast<double>(detection.box.top()) - 5)};
-                img.draw(text{detection.score, label_position, {"sans-serif", 16}}, color::Blue);
-                for (const auto &landmark: detection.landmarks) img.draw(circle{landmark, 1}, stroke{color::Green, 2});
+                img.draw(graphics::text{detection.score, label_position, {"sans-serif", 16}}, color::Blue);
+                for (const auto &landmark: detection.landmarks) img.draw(circle{landmark, 1}, graphics::stroke{color::Green, 2});
             }
 
-            vector<face> process_detections(const vector<const float *> &outputs, const image &img,
+            vector<face> process_detections(const vector<const float *> &outputs, const image::picture &img,
                                             const bool include_face_images) {
                 vector<layer_info> layers;
                 layers.reserve(STRIDES.size());
@@ -155,15 +155,15 @@ namespace sc {
             }
 
             vector<face> run(const string &image_filename, const bool include_face_images) {
-                const image input{image_filename};
+                const image::picture input{image_filename};
                 return run(input, include_face_images);
             }
 
-            vector<face> run(const image &source, const bool include_face_images) {
+            vector<face> run(const image::picture &source, const bool include_face_images) {
                 detections.clear();
                 if (source.empty()) throw invalid_argument{"Cannot detect faces in an empty image"};
                 original = source;
-                image input{*original};
+                image::picture input{*original};
                 input.snap_to_size(stride, valid_sizes);
                 // How the letterboxed copy maps back onto the image (boxes())
                 const auto from = original->size(), to = input.size();
@@ -176,9 +176,9 @@ namespace sc {
                 return process_detections(result, input, include_face_images);
             }
 
-            [[nodiscard]] image annotated() const {
+            [[nodiscard]] image::picture annotated() const {
                 if (!original) throw runtime_error("No image has been detected");
-                image result{*original};
+                image::picture result{*original};
                 result.snap_to_size(stride, valid_sizes);
                 for (const auto &detection: detections) annotate_face(detection, result);
                 return result;
@@ -198,7 +198,7 @@ namespace sc {
             onnx detector;
             onnx extractor;
             vector<detection> detections;
-            optional<image> original;
+            optional<image::picture> original;
             size_i padding_{0, 0};
             double scale_ = 0;
 
@@ -233,11 +233,11 @@ namespace sc {
         return impl->run(image_path.string(), include_face_images);
     }
 
-    vector<face> facedetector::detect(const image &input, const bool include_face_images) const {
+    vector<face> facedetector::detect(const image::picture &input, const bool include_face_images) const {
         return impl->run(input, include_face_images);
     }
 
-    image facedetector::annotated() const {
+    image::picture facedetector::annotated() const {
         return impl->annotated();
     }
 

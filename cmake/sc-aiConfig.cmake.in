@@ -4,8 +4,9 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(onnxruntime)
 find_dependency(nlohmann_json)
-find_dependency(sc-core)
+find_dependency(sc-core 4.0.0)
+find_dependency(sc-geometry 1.0.0)
 # sc-ai's targets link sc::sc-image (which brings sc-graphics and OpenCV).
-find_dependency(sc-image 6.0.0)
+find_dependency(sc-image 7.0.0)
 
 include ("${CMAKE_CURRENT_LIST_DIR}/sc-aiTargets.cmake")

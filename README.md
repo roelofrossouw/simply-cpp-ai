@@ -62,7 +62,7 @@ target_link_libraries(myapp PRIVATE sc::sc-ai)
 #include <iostream>
 
 int main() {
-    sc::yolo yolo("yolo26n.onnx");
+    sc::ai::yolo yolo("yolo26n.onnx");
     yolo.set_threshold(50);
     yolo.detect("photo.jpg");
     std::cout << yolo << std::endl;
@@ -73,16 +73,16 @@ Two COCO object detectors come with simply-cpp-models: `yolo26n`, the nano model
 11 ms a frame on an Apple M-series CPU), and `yolo26m`, the medium one (about 2.5 times as long,
 but much surer, and it finds what the nano model misses, such as people in close-up dashcam
 footage). Both take a 640 x 640 picture and give up to 10 detections (they were exported with `max_det=10`), so they're used the same
-way: `sc::yolo yolo{"yolo26m"};`.
+way: `sc::ai::yolo yolo{"yolo26m"};`.
 
-`sc::onnx` (`<sc/ai/onnx.h>`) is the lower-level wrapper `sc::yolo` is built on, for running other ONNX models directly against `sc::image` data.
+`sc::ai::onnx` (`<sc/ai/onnx.h>`) is the lower-level wrapper `sc::ai::yolo` is built on, for running other ONNX models directly against `sc::image::picture` data.
 
-PaddleOCR is available through `sc::ocr`. It detects text regions, recognises each line, and reports text, confidence, and its bounding box in the source image:
+PaddleOCR is available through `sc::ai::ocr`. It detects text regions, recognises each line, and reports text, confidence, and its bounding box in the source image:
 
 ```cpp
 #include <sc/ai/ocr.h>
 
-sc::ocr reader; // paddle_det_monkt_5 and paddle_rec_monkt_latin from simply-cpp-models
+sc::ai::ocr reader; // paddle_det_monkt_5 and paddle_rec_monkt_latin from simply-cpp-models
 reader.detect("document.jpg");
 std::cout << reader.text() << std::endl;
 std::cout << reader.to_json().dump(2) << std::endl;
@@ -92,7 +92,7 @@ Use the optional constructor arguments to select detection and recognition model
 
 How it reads a page:
 
-- **Upright first.** Since 1.6.0, `detect()` turns the image upright with PaddleOCR's document orientation classifier (`paddle_rotate`) before reading, so a photo taken sideways or upside down reads as text rather than noise. Boxes are still in the given image's coordinates; `reader.rotation()` says how far it was turned, `sc::ocr::upright_rotation(image)` gives the same answer on its own, and `reader.set_auto_rotate(false)` reads the image as given. Results on such photos differ from earlier versions.
+- **Upright first.** Since 1.6.0, `detect()` turns the image upright with PaddleOCR's document orientation classifier (`paddle_rotate`) before reading, so a photo taken sideways or upside down reads as text rather than noise. Boxes are still in the given image's coordinates; `reader.rotation()` says how far it was turned, `sc::ai::ocr::upright_rotation(image)` gives the same answer on its own, and `reader.set_auto_rotate(false)` reads the image as given. Results on such photos differ from earlier versions.
 - **Detection** scales the image to at most 1280 pixels on the longer side, looks again at a better scale when the text is very large or very small (small text in a large image is read in overlapping tiles), grows each region back to cover the whole line, and turns short regions (a lone letter) to the page's text direction.
 - **Recognition** reads every line the same way up as most of the page, using a text line orientation classifier (`paddle_line_rotate`); a line is also read the other way only when that is clearly better.
 
@@ -103,39 +103,39 @@ South African identity documents (ID cards, ID books and passports, read for the
 ### Which GPU
 
 Models run on CUDA where its provider and runtime are there (CoreML on Apple platforms), else on
-the CPU. With several GPUs, `sc::onnx`, `sc::yolo` and `sc::facedetector` take the one to use,
-from 0; `sc::onnx::gpus()` says how many there are (0 without CUDA). A GPU that isn't there
-throws `std::invalid_argument`. `sc::onnx::cpu` (since 3.1.0) puts a model on the CPU even where
-there are GPUs, and `on_gpu()` (on `sc::onnx`, `sc::yolo` and `sc::facedetector`) says where a model
+the CPU. With several GPUs, `sc::ai::onnx`, `sc::ai::yolo` and `sc::ai::facedetector` take the one to use,
+from 0; `sc::ai::onnx::gpus()` says how many there are (0 without CUDA). A GPU that isn't there
+throws `std::invalid_argument`. `sc::ai::onnx::cpu` (since 3.1.0) puts a model on the CPU even where
+there are GPUs, and `on_gpu()` (on `sc::ai::onnx`, `sc::ai::yolo` and `sc::ai::facedetector`) says where a model
 really runs: false on the CPU, also when CUDA was there but its provider couldn't be used.
 
 ```cpp
-const sc::yolo on_cpu{"yolo26n", sc::onnx::cpu};
+const sc::ai::yolo on_cpu{"yolo26n", sc::ai::onnx::cpu};
 std::cout << (on_cpu.on_gpu() ? "GPU" : "CPU") << '\n'; // CPU
 ```
 
 ```cpp
 // A model on each GPU, for a thread each.
-std::vector<std::unique_ptr<sc::yolo>> models;
-for (int gpu = 0; gpu < std::max(1, sc::onnx::gpus()); ++gpu)
-    models.push_back(std::make_unique<sc::yolo>("yolo26n", gpu));
+std::vector<std::unique_ptr<sc::ai::yolo>> models;
+for (int gpu = 0; gpu < std::max(1, sc::ai::onnx::gpus()); ++gpu)
+    models.push_back(std::make_unique<sc::ai::yolo>("yolo26n", gpu));
 ```
 
 ### Face detection and reusable face data
 
-`sc::facedetector` returns detected faces as `std::vector<sc::face>`. Each `sc::face` owns normalized 512-value features and can optionally retain its aligned face image:
+`sc::ai::facedetector` returns detected faces as `std::vector<sc::ai::face>`. Each `sc::ai::face` owns normalized 512-value features and can optionally retain its aligned face image:
 
 ```cpp
 #include <sc/ai/facedetector.h>
 
-sc::facedetector detector;
+sc::ai::facedetector detector;
 const auto faces = detector.detect("photo.jpg"); // Keep aligned face images (default)
 const auto embeddings = detector.detect("photo.jpg", false); // Feature-only faces
 
 if (!embeddings.empty()) {
     const nlohmann::ordered_json json = embeddings.front().to_json();
     embeddings.front().save("face.json");
-    const auto loaded = sc::face::load("face.json");
+    const auto loaded = sc::ai::face::load("face.json");
 }
 ```
 
@@ -157,7 +157,7 @@ sc-ai-demo street.jpg
 ```
 
 With `--video` it does the same for a video (MP4, MOV, MKV, AVI and the rest, read a frame at a
-time by sc-image's `sc::video`), a frame a second by default (`--every SECONDS`, 0 for every frame),
+time by sc-image's `sc::image::video`), a frame a second by default (`--every SECONDS`, 0 for every frame),
 listing what's in each and then how many frames each kind of object was in. The model loads once,
 and the frames between are skipped without being decoded. `--threshold PERCENT` (default 30) lists
 less certain detections too, and `--model yolo26m` uses the medium model, slower (about 2.5 times
@@ -185,7 +185,7 @@ most certain first:
 [[38.14, 56.46, 75.2, 84.97, 93.6, 0], [37.64, 73.66, 11.68, 7.25, 68.8, 67]]
 ```
 
-With `--full` (`sc::yolo::detail::full`) a video gives a summary instead: for each kind of object,
+With `--full` (`sc::ai::yolo::detail::full`) a video gives a summary instead: for each kind of object,
 how many frames it was in, how sure it was at most, and that frame's number, time and detections
 (all of them, as for a photo):
 
@@ -204,7 +204,7 @@ Without a photo or video it uses a small rendered image with nothing in it, whic
 shows the model, ONNX Runtime and sc-image loading and running. It is installed
 with the runtime package (`simply-cpp-ai`), so it works without the `-dev`
 package. It is a demonstration, not a test, so CTest doesn't run it.
-`sc::yolo::object_name(type)` gives the name of a detection's type.
+`sc::ai::yolo::object_name(type)` gives the name of a detection's type.
 
 Its source is `examples/sc-ai-demo.cpp`; the code below is copied from it at
 configure time, so it always matches code that compiles:
@@ -213,8 +213,8 @@ configure time, so it always matches code that compiles:
 ```cpp
 sc::console::heading("Loading the model");
 const auto model = args.as<std::string>("model"); // a name in simply-cpp-models, or a file
-sc::yolo yolo{model};
-sc::console::show_text("sc::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
+sc::ai::yolo yolo{model};
+sc::console::show_text("sc::ai::yolo yolo{\"" + model + "\"};", "loaded in " + std::string(sw));
 yolo.set_threshold(threshold / 100); // a fraction: 0.3 lists what it's at least 30% sure of
 
 if (video_file.empty()) {
@@ -228,12 +228,12 @@ if (video_file.empty()) {
     sc::console::heading(std::to_string(detections.size()) + (detections.size() == 1 ? " object found" : " objects found"));
     for (const auto &found: detections) sc::console::note(described(found));
 } else {
-    // A video: sc-image's sc::video reads it a frame at a time, each frame an sc::image.
+    // A video: sc-image's sc::image::video reads it a frame at a time, each frame an sc::image::picture.
     sc::console::heading("Detecting objects in a video");
-    sc::video clip{video_file};
+    sc::image::video clip{video_file};
     std::ostringstream about;
     about << clip.size() << ", " << clip.fps() << " frames a second, " << clock(clip.duration());
-    sc::console::show_text("sc::video clip{\"" + video_file.string() + "\"};", about.str());
+    sc::console::show_text("sc::image::video clip{\"" + video_file.string() + "\"};", about.str());
 
     std::map<std::string, int> frames_with; // how many frames each kind of object was in
     int looked_at = 0;
@@ -243,7 +243,7 @@ if (video_file.empty()) {
         ++looked_at;
         const auto detections = yolo.to_json();
         std::map<std::string, int> here;
-        for (const auto &found: detections) ++here[sc::yolo::object_name(found[5].get<int>())];
+        for (const auto &found: detections) ++here[sc::ai::yolo::object_name(found[5].get<int>())];
         std::string line = clock(frame->time) + "  ";
         if (here.empty()) line += "nothing";
         for (const auto &[name, count]: here) {
@@ -264,7 +264,7 @@ More demos, installed alongside it:
 
 | Demo | Shows |
 |---|---|
-| `sc-ai-ocr [image]` | reading text with `sc::ocr`: each line with its confidence and position; without an image it renders a few lines of text to read |
+| `sc-ai-ocr [image]` | reading text with `sc::ai::ocr`: each line with its confidence and position; without an image it renders a few lines of text to read |
 
 ## Requirements
 

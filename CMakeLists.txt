@@ -14,8 +14,9 @@ message(STATUS "SimplyCPP ${SC_MODULE} Version: ${SC_VERSION}")
 ################
 
 # The demos use sc::console subheadings and SC_SHOW with commas (1.5.15).
-find_or_install_package(sc-core simply-cpp-dev simply-cpp 3.0.0)
-find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image 6.0.0)
+find_or_install_package(sc-core simply-cpp-dev simply-cpp 4.0.0)
+find_or_install_package(sc-geometry simply-cpp-geometry-dev simply-cpp-geometry 1.0.0)
+find_or_install_package(sc-image simply-cpp-image-dev simply-cpp-image 7.0.0)
 find_or_install_package(nlohmann_json nlohmann-json3-dev nlohmann-json)
 find_or_install_package(onnxruntime simply-cpp-onnxruntime onnxruntime)
 find_or_install_package(sc-models simply-cpp-models simply-cpp-models)
@@ -31,8 +32,8 @@ set(SOURCE_LIBRARIES)
 set(SOURCE_LINK_LIBRARIES)
 
 add_sc_object(onnx
-        LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS}
-        PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS})
+        LINK_LIBRARIES sc::sc-core sc::sc-geometry sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS}
+        PUBLIC_LINK_LIBRARIES sc::sc-core sc::sc-geometry sc::sc-image onnxruntime::onnxruntime ${CMAKE_DL_LIBS})
 target_include_directories(sc-obj-onnx PRIVATE ${CMAKE_BINARY_DIR}/generated)
 
 add_sc_object(yolo
@@ -92,5 +93,5 @@ target_link_libraries(run-ocr PRIVATE sc::sc-ai)
 #############
 package_sc_module(
         DEPENDS simply-cpp-onnxruntime simply-cpp-models
-        DEV_DEPENDS "simply-cpp-dev (>= 3.0.0~)" "simply-cpp-image-dev (>= 6.0.0~)" simply-cpp-onnxruntime simply-cpp-models
+        DEV_DEPENDS "simply-cpp-dev (>= 4.0.0~)" "simply-cpp-geometry-dev (>= 1.0.0~)" "simply-cpp-image-dev (>= 7.0.0~)" simply-cpp-onnxruntime simply-cpp-models
 )

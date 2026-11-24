@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
         if (source.empty()) {
             sc::console::output() << "No image given (sc-ai-ocr <image>), so rendering a few lines of text\n";
             source = (std::filesystem::temp_directory_path() / "sc-ai-ocr.png").string();
-            std::ofstream{source, std::ios::binary} << sc::svg2png::FromString(
+            std::ofstream{source, std::ios::binary} << sc::image::svg2png::from_string(
                 R"(<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220">)"
                 R"(<rect width="640" height="220" fill="white"/>)"
                 R"(<g font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="30">)"
@@ -41,8 +41,8 @@ int main(int argc, char **argv) {
         sc::timer sw;
 
         sc::console::heading("Loading the models");
-        sc::ocr reader;
-        sc::console::show_text("sc::ocr reader;", "text detection and recognition models loaded in " + std::string(sw));
+        sc::ai::ocr reader;
+        sc::console::show_text("sc::ai::ocr reader;", "text detection and recognition models loaded in " + std::string(sw));
 
         sc::console::heading("Reading");
         sc::timer reading;

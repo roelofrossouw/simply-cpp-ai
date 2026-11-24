@@ -3,7 +3,7 @@
 #include "ai_config.h"
 #include <sc/image/image.h>
 #include <sc/ai/onnx.h>
-#include <sc/core/dbscan.h>
+#include <sc/geometry/dbscan.h>
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-namespace sc {
+namespace sc::ai {
     namespace impl {
         namespace {
             const fs::path model_dir{SIMPLY_CPP_MODEL_DIR};
@@ -156,8 +156,8 @@ namespace sc {
                 return result;
             }
 
-            rotated_rect map_to_original(const rotated_rect &bounds, const image &detector_input,
-                                         const image &original, const size_i &map_size) {
+            rotated_rect map_to_original(const rotated_rect &bounds, const image::picture &detector_input,
+                                         const image::picture &original, const size_i &map_size) {
                 const auto padding = detector_input.padding();
                 const auto content = detector_input.cropped_size();
                 const double scale_x = static_cast<double>(detector_input.size().width()) / map_size.width() *
@@ -334,7 +334,7 @@ namespace sc {
                 maximum_height_difference_ = difference;
             }
 
-            [[nodiscard]] std::vector<rotated_rect> detect(const image &input) const {
+            [[nodiscard]] std::vector<rotated_rect> detect(const image::picture &input) const {
                 if (input.empty()) throw std::invalid_argument{"Cannot detect text in an empty image"};
                 const int longest_side = std::max(input.size().width(), input.size().height());
                 const double scale = std::min(1.0, static_cast<double>(MaximumDetectionSide) / longest_side);
@@ -362,7 +362,7 @@ namespace sc {
                     auto mapped = map_to_original(grown, found.detector_input, input, found.map_size);
                     // Within 90 degrees of level, so an upright page's lines are all cut out the same
                     // way up: kept between 0 and 180 degrees, a line tilted a little anticlockwise,
-                    // at 179, was cut out upside down. (sc::ocr turns the image upright first.)
+                    // at 179, was cut out upside down. (sc::ai::ocr turns the image upright first.)
                     double angle = mapped.angle();
                     while (angle > 90) angle -= 180;
                     while (angle <= -90) angle += 180;
@@ -376,12 +376,12 @@ namespace sc {
             // What the model found in the input scaled by scale: text regions in the coordinates of
             // its text map, with what's needed to map them back to the input.
             struct detection {
-                image detector_input;
+                image::picture detector_input;
                 size_i map_size;
                 std::vector<rotated_rect> regions;
             };
 
-            [[nodiscard]] detection find_regions(const image &input, const double scale) const {
+            [[nodiscard]] detection find_regions(const image::picture &input, const double scale) const {
                 detection found{input, {}, {}};
                 if (scale != 1) {
                     found.detector_input.resize_to({
@@ -393,7 +393,7 @@ namespace sc {
                 found.map_size = found.detector_input.size();
 
                 const auto map = text_map(found.detector_input);
-                image probability_map = image::from_blob(map.data(), found.map_size.width(), found.map_size.height(), 1);
+                image::picture probability_map = image::picture::from_blob(map.data(), found.map_size.width(), found.map_size.height(), 1);
                 probability_map.mask(255.0 * static_cast<double>(threshold_) / 100.0);
                 found.regions = probability_map.find_min_area_rects(MinimumRegionArea);
                 return found;
@@ -403,7 +403,7 @@ namespace sc {
             // 32). An input larger than MaximumDetectionSide is read in overlapping tiles of that
             // size, whose maps are combined (the higher probability where they overlap), so a line
             // across a tile edge is still one region.
-            [[nodiscard]] std::vector<float> text_map(const image &input) const {
+            [[nodiscard]] std::vector<float> text_map(const image::picture &input) const {
                 const int width = input.size().width(), height = input.size().height();
                 std::vector<float> map(static_cast<size_t>(width) * height, 0.0f);
                 const auto starts = [](const int length) {
@@ -468,17 +468,17 @@ namespace sc {
                 threshold_ = {threshold, 2};
             }
 
-            [[nodiscard]] ocr_recognizer::result recognize(const image &input) const {
+            [[nodiscard]] ocr_recognizer::result recognize(const image::picture &input) const {
                 if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
-                image resized{input};
+                image::picture resized{input};
                 resized.resize_to({0, 48});
                 return decode(recognizer.process_image(resized, RecognitionScale, RecognitionMean));
             }
 
-            [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image> &inputs,
+            [[nodiscard]] std::vector<ocr_recognizer::result> recognize(const std::vector<image::picture> &inputs,
                                                                         const double stretch = 1) const {
                 if (inputs.empty()) return {};
-                std::vector<image> resized;
+                std::vector<image::picture> resized;
                 resized.reserve(inputs.size());
                 for (const auto &input: inputs) {
                     if (input.empty()) throw std::invalid_argument{"Cannot recognise an empty image"};
@@ -495,7 +495,7 @@ namespace sc {
                 result.reserve(resized.size());
                 for (size_t first = 0; first < resized.size(); first += RecognitionBatch) {
                     const size_t count = std::min(RecognitionBatch, resized.size() - first);
-                    const std::vector<image> batch(std::make_move_iterator(resized.begin() + static_cast<std::ptrdiff_t>(first)),
+                    const std::vector<image::picture> batch(std::make_move_iterator(resized.begin() + static_cast<std::ptrdiff_t>(first)),
                                                    std::make_move_iterator(resized.begin() + static_cast<std::ptrdiff_t>(first + count)));
                     const auto outputs = recognizer.process_images(batch, RecognitionScale, RecognitionMean, widest);
                     if (outputs.size() != 1 || outputs.front().shape.size() != 3 ||
@@ -611,20 +611,20 @@ namespace sc {
             }
 
             void run(const fs::path &image_path, const double minimum_confidence) {
-                run(image{image_path.string()}, minimum_confidence);
+                run(image::picture{image_path.string()}, minimum_confidence);
             }
 
             void set_auto_rotate(const bool value) { auto_rotate = value; }
 
             [[nodiscard]] int rotation() const noexcept { return rotation_; }
 
-            void run(const image &input, const double minimum_confidence) {
+            void run(const image::picture &input, const double minimum_confidence) {
                 validate_minimum_confidence(minimum_confidence);
                 lines_.clear();
                 original = input;
                 // Read upright: then all of a page's lines are cut out the same way up.
                 rotation_ = auto_rotate ? ocr::upright_rotation(input) : 0;
-                image upright{input};
+                image::picture upright{input};
                 if (rotation_) upright.rotate(rotation_);
                 const auto regions = detector.detect(upright);
                 const auto text_images = detector.text_images(upright, regions);
@@ -639,14 +639,14 @@ namespace sc {
                 const bool page_upside_down = upside_down_lines > upright_lines;
                 const auto against_page = page_upside_down ? line_orientation::upright : line_orientation::upside_down;
 
-                std::vector<image> page_way;
+                std::vector<image::picture> page_way;
                 page_way.reserve(text_images.size());
                 for (const auto &text_image: text_images) {
                     page_way.push_back(text_image);
                     if (page_upside_down) page_way.back().rotate(180);
                 }
                 const auto page_readings = recognizer.recognize(page_way);
-                std::vector<image> other_way;
+                std::vector<image::picture> other_way;
                 std::vector<size_t> other_of;
                 for (size_t i = 0; i < text_images.size(); ++i) {
                     if (ways[i] != against_page && page_readings[i].confidence >= RereadBelow) continue;
@@ -673,7 +673,7 @@ namespace sc {
                 // Lines that may be one (with a <, or 30 characters or more) are read again
                 // stretched, and that reading is taken when it reads as an MRZ and is longer -
                 // letters back - and about as confident. Ordinary text reads worse stretched.
-                std::vector<image> dense;
+                std::vector<image::picture> dense;
                 std::vector<size_t> dense_of;
                 for (size_t i = 0; i < text_images.size(); ++i) {
                     const auto &text = chosen[i]->text;
@@ -732,12 +732,12 @@ namespace sc {
                 return result;
             }
 
-            [[nodiscard]] image annotated() const {
+            [[nodiscard]] image::picture annotated() const {
                 if (!original) throw std::runtime_error{"No image has been detected"};
-                image result{*original};
+                image::picture result{*original};
                 for (const auto &line: lines_) {
-                    result.draw(line.box, stroke{color::Blue, 2});
-                    result.draw(sc::text{line.text, {line.box.left(), std::max(20.0, line.box.top() - 5)}, {"sans-serif", 16}},
+                    result.draw(line.box, graphics::stroke{color::Blue, 2});
+                    result.draw(sc::graphics::text{line.text, {line.box.left(), std::max(20.0, line.box.top() - 5)}, {"sans-serif", 16}},
                                 color::Blue);
                 }
                 return result;
@@ -767,10 +767,10 @@ namespace sc {
 
             // How each line image is turned, from PaddleOCR's text line orientation classifier:
             // 160 x 80 pixels in, ImageNet-normalised; out, how likely upright and upside down.
-            [[nodiscard]] std::vector<line_orientation> orientations(const std::vector<image> &lines) const {
+            [[nodiscard]] std::vector<line_orientation> orientations(const std::vector<image::picture> &lines) const {
                 std::vector<line_orientation> result(lines.size(), line_orientation::unsure);
                 if (!line_classifier || lines.empty()) return result;
-                std::vector<image> inputs;
+                std::vector<image::picture> inputs;
                 inputs.reserve(lines.size());
                 for (const auto &line: lines) inputs.push_back(line.resized({160, 80}));
                 const auto outputs = line_classifier->process_images(inputs, DetectionScale, DetectionMean);
@@ -790,7 +790,7 @@ namespace sc {
             bool auto_rotate = true;
             int rotation_ = 0;
             ocr_recognizer recognizer;
-            std::optional<image> original;
+            std::optional<image::picture> original;
             std::vector<ocr::line> lines_;
         };
     }
@@ -817,27 +817,27 @@ namespace sc {
     }
 
     std::vector<rotated_rect> ocr_detector::detect(const fs::path &image_path) const {
-        return detect(image{image_path.string()});
+        return detect(image::picture{image_path.string()});
     }
 
-    std::vector<rotated_rect> ocr_detector::detect(const image &input) const {
+    std::vector<rotated_rect> ocr_detector::detect(const image::picture &input) const {
         return impl->detect(input);
     }
 
-    std::vector<image> ocr_detector::text_images(const image &input,
+    std::vector<image::picture> ocr_detector::text_images(const image::picture &input,
                                                  const std::vector<rotated_rect> &regions) const {
         if (input.empty()) throw std::invalid_argument{"Cannot extract text from an empty image"};
-        std::vector<image> result;
+        std::vector<image::picture> result;
         result.reserve(regions.size());
         for (const auto &region: regions) result.push_back(input.deskewed(region));
         return result;
     }
 
-    std::vector<image> ocr_detector::text_images(const fs::path &image_path) const {
-        return text_images(image{image_path.string()});
+    std::vector<image::picture> ocr_detector::text_images(const fs::path &image_path) const {
+        return text_images(image::picture{image_path.string()});
     }
 
-    std::vector<image> ocr_detector::text_images(const image &input) const {
+    std::vector<image::picture> ocr_detector::text_images(const image::picture &input) const {
         return text_images(input, detect(input));
     }
 
@@ -855,15 +855,15 @@ namespace sc {
         impl->set_threshold(threshold);
     }
 
-    ocr_recognizer::result ocr_recognizer::recognize(const image &input) const {
+    ocr_recognizer::result ocr_recognizer::recognize(const image::picture &input) const {
         return impl->recognize(input);
     }
 
-    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image> &inputs) const {
+    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image::picture> &inputs) const {
         return impl->recognize(inputs);
     }
 
-    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image> &inputs, const double stretch) const {
+    std::vector<ocr_recognizer::result> ocr_recognizer::recognize(const std::vector<image::picture> &inputs, const double stretch) const {
         return impl->recognize(inputs, stretch);
     }
 
@@ -914,7 +914,7 @@ namespace sc {
         return impl->rotation();
     }
 
-    int ocr::upright_rotation(const image &input) {
+    int ocr::upright_rotation(const image::picture &input) {
         static thread_local const std::unique_ptr<onnx> classifier = []() -> std::unique_ptr<onnx> {
             try {
                 return std::make_unique<onnx>("paddle_rotate.onnx", false);
@@ -942,7 +942,7 @@ namespace sc {
         return (4 - quarters) % 4 * 90;
     }
 
-    void ocr::detect(const image &input, const double minimum_confidence) const {
+    void ocr::detect(const image::picture &input, const double minimum_confidence) const {
         impl->run(input, minimum_confidence);
     }
 
@@ -954,7 +954,7 @@ namespace sc {
         return impl->text();
     }
 
-    image ocr::annotated() const {
+    image::picture ocr::annotated() const {
         return impl->annotated();
     }
 

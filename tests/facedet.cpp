@@ -15,11 +15,11 @@ int main() {
     // boxes(): where the faces are in the image's own pixels. A photo with a face (the COCO samples), and a copy
     // of half its size: the boxes come out half as big, at half the place, whatever the detector's letterbox.
     {
-        sc::facedetector boxed;
+        sc::ai::facedetector boxed;
         int checked = 0;
         for (const auto &file: fs::directory_iterator("resource/val2017")) {
             if (file.path().extension() != ".jpg") continue;
-            const sc::image photo{file.path().string()};
+            const sc::image::picture photo{file.path().string()};
             const auto faces = boxed.detect(photo, false);
             const auto boxes = boxed.boxes();
             if (boxes.size() != faces.size()) {
@@ -36,7 +36,7 @@ int main() {
                 cout << "FAILED: a box outside its image: " << box.left() << "," << box.top() << " " << box.width() << "x" << box.height() << endl;
                 return 1;
             }
-            sc::image half{photo};
+            sc::image::picture half{photo};
             half.resize_to({size.width() / 2, 0});
             const auto half_faces = boxed.detect(half, false);
             const auto half_boxes = boxed.boxes();
@@ -70,10 +70,10 @@ int main() {
         }
     }
     int counter{MaxFiles};
-    sc::facedetector fd;
+    sc::ai::facedetector fd;
     fd.set_threshold(MinFaceScore);
     fd.set_max_faces(MaxFaces);
-    vector<pair<string, sc::face> > feats;
+    vector<pair<string, sc::ai::face> > feats;
 
     // Faces need real photographs: the private documents (resource/private/documents, kept out of
     // the repository). Without them there is nothing to detect.
@@ -88,7 +88,7 @@ int main() {
         if (!counter--) break;
         sc::timer sw2;
         if (!tested_image_input) {
-            const sc::image input{img_file.path().string()};
+            const sc::image::picture input{img_file.path().string()};
             const auto in_memory_faces = fd.detect(input);
             if (in_memory_faces.size() > MaxFaces) return 1;
             tested_image_input = true;
@@ -107,7 +107,7 @@ int main() {
                 cout << static_cast<string>(sim) << " -> " << n1 << " vs " << n2;
                 if (sim < 60) cout << "????";
                 cout << endl;
-                // const auto matched_faces = sc::image::side_by_side(*f1.face_image(), *f2.face_image());
+                // const auto matched_faces = sc::image::picture::side_by_side(*f1.face_image(), *f2.face_image());
             }
         }
     }
