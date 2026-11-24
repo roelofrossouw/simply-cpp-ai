@@ -39,7 +39,7 @@ face or object detection in a product.
 
 ## Dependencies
 
-- **simply-cpp (sc-core) and simply-cpp-image (sc-image)** - real dependencies of sc-ai's CMake package. Neither the Homebrew formula nor the apt package currently pulls them in automatically, so install all three explicitly (see above).
+- **simply-cpp (sc-core), simply-cpp-geometry (sc-geometry) and simply-cpp-image (sc-image)** - sc-ai's CMake package finds them itself, and `simply-cpp-ai-dev` (apt) and the `simply-cpp-ai` formula pull them in.
 - **nlohmann_json** - `nlohmann-json3-dev` on apt, `nlohmann-json` on brew; installed automatically if missing when building from source.
 - **ONNX Runtime** - `simply-cpp-onnxruntime` on apt (a repackaged build of ONNX Runtime's own GPU/CUDA release - a matching NVIDIA/CUDA setup needs to already be present), `onnxruntime` on brew; installed automatically if missing when building from source.
 - **ONNX model files** - a separate `simply-cpp-models` package supplies the actual `.onnx` model weights; installed automatically if missing when building from source.
@@ -48,7 +48,7 @@ Both of the above come from the same Homebrew tap / apt repo as `simply-cpp` its
 
 ## Usage
 
-`sc-ai`'s own CMake package doesn't yet declare its dependency on `sc-image`, so when consuming an installed package, find that one explicitly too:
+`sc-ai`'s CMake package finds sc-image, sc-geometry and sc-core for you:
 
 ```cmake
 find_package(sc-ai CONFIG REQUIRED)  # brings sc-image and sc-core
