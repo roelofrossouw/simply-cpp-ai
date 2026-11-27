@@ -145,12 +145,22 @@ namespace sc::ai {
                 }
                 vector<face> result;
                 result.reserve(detections.size());
+                // A face whose features are unusable (zero or non-finite, which face refuses) is left out,
+                // with its detection, so one bad face doesn't lose the others and boxes()/annotated() match.
+                vector<detection> kept;
+                kept.reserve(detections.size());
                 for (const auto &detection: detections) {
                     auto aligned_face = extract_face(detection, img);
                     const auto features = extractor.process_image(aligned_face)[0].data;
-                    if (include_face_images) result.emplace_back(features, aligned_face);
-                    else result.emplace_back(features);
+                    try {
+                        if (include_face_images) result.emplace_back(features, aligned_face);
+                        else result.emplace_back(features);
+                    } catch (const invalid_argument &) {
+                        continue;
+                    }
+                    kept.push_back(detection);
                 }
+                detections = std::move(kept);
                 return result;
             }
 
